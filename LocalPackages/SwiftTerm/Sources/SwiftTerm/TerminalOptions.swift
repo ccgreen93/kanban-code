@@ -50,6 +50,9 @@ public struct TerminalOptions {
     public var termName: String
     /// The desired startup cursor style, this merely sets an internal variable, it is the view job to render it
     public var cursorStyle: CursorStyle
+    /// The style a program gets when it asks for the default one (DECSCUSR 0
+    /// or 1), as the user configured it: blinking block unless set.
+    public var defaultCursorStyle: CursorStyle = .blinkBlock
     /// Deprecated?   The new accessibility work will make this useless
     public var screenReaderMode: Bool
     /// Size of the scrollback buffer, defaults to 500 lines

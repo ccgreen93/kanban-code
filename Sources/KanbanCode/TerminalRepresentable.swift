@@ -873,6 +873,11 @@ final class TerminalCache {
         terminal.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1.0)
         terminal.nativeForegroundColor = NSColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1.0)
         terminal.caretColor = .systemGreen
+        // A line cursor, also after a program asks for the default style
+        // (tmux does when it attaches).
+        let core = terminal.getTerminal()
+        core.options.defaultCursorStyle = .blinkBar
+        core.setCursorStyle(.blinkBar)
 
         // Brighter ANSI palette (SwiftTerm Color uses UInt16 0-65535, multiply 0-255 by 257)
         let c = { (r: UInt16, g: UInt16, b: UInt16) in SwiftTerm.Color(red: r * 257, green: g * 257, blue: b * 257) }

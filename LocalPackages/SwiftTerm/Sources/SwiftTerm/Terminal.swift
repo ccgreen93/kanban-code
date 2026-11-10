@@ -3157,7 +3157,7 @@ open class Terminal {
         let p = max (pars.count == 0 ? 1 : pars [0], 1)
         switch (p) {
         case 1, 0:
-            setCursorStyle (.blinkBlock)
+            setCursorStyle (options.defaultCursorStyle)
         case 2:
             setCursorStyle (.steadyBlock)
         case 3:
