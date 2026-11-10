@@ -431,6 +431,11 @@ struct CardBadgesRow: View {
             }
         }
 
+        // Its session runs outside Kanban (a terminal, VS Code)
+        if let presence = card.externalSessionPresence {
+            ExternalSessionBadge(presence: presence)
+        }
+
         // Its agent stopped on the plan's usage limit
         if let limit = card.activeUsageLimit() {
             UsageLimitBadge(text: limit.pausedLine(assistant: card.link.effectiveAssistant.displayName))

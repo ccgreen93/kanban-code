@@ -37,6 +37,11 @@ struct KanbanCodeApp: App {
                     NotificationCenter.default.post(name: .kanbanCodeNewTask, object: nil)
                 }
                 .keyboardShortcut("n", modifiers: .command)
+
+                Button("Import Session…") {
+                    NotificationCenter.default.post(name: .kanbanCodeImportSession, object: nil)
+                }
+                .keyboardShortcut("i", modifiers: [.command, .shift])
             }
 
             CommandGroup(replacing: .undoRedo) {

@@ -109,6 +109,7 @@ struct ContentView: View {
     @AppStorage("detailExpanded") var detailExpandedPersisted = false
     @AppStorage("selectedCardId") var selectedCardIdPersisted = ""
     @State var showAddFromPath = false
+    @State var showImportSession = false
     @State var isDroppingFolder = false
     @State var isDroppingImage = false
     @State var addFromPathText = ""
@@ -429,6 +430,8 @@ struct ContentView: View {
                             Image(systemName: "square.and.pencil")
                         }
                         .help("New task (⌘N)")
+
+                        importSessionToolbarButton
 
                         Button { showCreateChannel = true } label: {
                             Image(systemName: "number")
@@ -918,6 +921,7 @@ struct ContentView: View {
             .sheet(isPresented: $showAddFromPath) {
                 addFromPathSheet
             }
+            .modifier(importSessionPresenter)
             .sheet(isPresented: $showCreateChannel) {
                 CreateChannelDialog(isPresented: $showCreateChannel) { name in
                     store.dispatch(.createChannel(name: name))
@@ -954,6 +958,9 @@ struct ContentView: View {
                     assistant: config.assistant,
                     initialServiceId: config.apiServiceId,
                     modelOverride: config.modelOverride,
+                    externalSessionWarning: config.isResume
+                        ? store.state.cards.first { $0.id == config.cardId }?.externalSessionPresence?.resumeWarning
+                        : nil,
                     isPresented: Binding(
                         get: { launchConfig != nil },
                         set: { if !$0 { launchConfig = nil } }
@@ -1637,6 +1644,8 @@ struct ContentView: View {
                         }
                         .help("New task (⌘N)")
 
+                        importSessionToolbarButton
+
                         Button { showCreateChannel = true } label: {
                             Image(systemName: "number")
                         }
@@ -2315,6 +2324,9 @@ struct ContentView: View {
             CommandItem("New Task", icon: "plus", shortcut: AppShortcut.newTask.displayString) { [self] in
                 presentNewTask()
             },
+            CommandItem("Import Session…", icon: "tray.and.arrow.down", shortcut: "⇧⌘I") { [self] in
+                showImportSession = true
+            },
         ]
 
         // Card actions, so they only appear with a card open.
@@ -2795,7 +2807,7 @@ struct ContentView: View {
         setSelectedProject(cardProject)
     }
 
-    private func setSelectedProject(_ path: String?) {
+    func setSelectedProject(_ path: String?) {
         store.dispatch(.setSelectedProject(path))
         selectedProjectPersisted = path ?? ""
     }

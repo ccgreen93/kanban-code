@@ -20,6 +20,8 @@ struct LaunchConfirmationDialog: View {
     let assistant: CodingAssistant
     let initialServiceId: String?
     let modelOverride: String?
+    /// Shown above the command when the session runs outside Kanban.
+    let externalSessionWarning: String?
     @Binding var isPresented: Bool
     /// Boxd machine the user picked. Called just before `onLaunch` when the
     /// launch runs on boxd.
@@ -58,6 +60,7 @@ struct LaunchConfirmationDialog: View {
         assistant: CodingAssistant = .claude,
         initialServiceId: String? = nil,
         modelOverride: String? = nil,
+        externalSessionWarning: String? = nil,
         isPresented: Binding<Bool>,
         onLaunch: @escaping (String, Bool, String?, Bool, Bool, String?, [ImageAttachment], String?) -> Void = { _, _, _, _, _, _, _, _ in },
         onMachineChoice: @escaping (BoxdMachineChoice) -> Void = { _ in },
@@ -77,6 +80,7 @@ struct LaunchConfirmationDialog: View {
         self.assistant = assistant
         self.initialServiceId = initialServiceId
         self.modelOverride = modelOverride
+        self.externalSessionWarning = externalSessionWarning
         self._isPresented = isPresented
         self.onMachineChoice = onMachineChoice
         self.onRemoveMachine = onRemoveMachine
@@ -114,6 +118,16 @@ struct LaunchConfirmationDialog: View {
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .truncationMode(.middle)
+                    }
+
+                    if isResume, let externalSessionWarning {
+                        Label(externalSessionWarning, systemImage: "exclamationmark.triangle.fill")
+                            .font(.app(.callout))
+                            .foregroundStyle(.orange)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(10)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
 
                     // API Service picker
