@@ -92,14 +92,18 @@ app: build cli install-cli web
 	@codesign --force --sign "$(CODESIGN_IDENTITY)" --entitlements KanbanCode.entitlements $(BUNDLE_DIR)
 	@# Register with Launch Services, as the only copy of this bundle id, so
 	@# notification clicks open this build and macOS picks up the icon
-	@Scripts/register-app.sh $(BUNDLE_DIR) $(BUNDLE_ID)
+	@# make install sets NO_REGISTER: only the copy in /Applications is registered,
+	@# so nothing opens the build folder's copy meanwhile.
+	@$(if $(NO_REGISTER),true,Scripts/register-app.sh $(BUNDLE_DIR) $(BUNDLE_ID))
 	@echo "Built $(BUNDLE_DIR)"
 
 # Installs the app into /Applications (cg-main: this fork's own version).
 # Quit Kanban Code first; its tmux sessions keep running meanwhile.
-install: app
-	@if pgrep -f "/Applications/$(BUNDLE_NAME)/Contents/MacOS/KanbanCode" >/dev/null; then \
-		echo "Kanban Code is running from /Applications: quit it first, then run make install again."; exit 1; \
+install:
+	@$(MAKE) --no-print-directory app NO_REGISTER=1
+	@# ps, not pgrep -f: the pattern would match this shell's own command line.
+	@if ps -axo command= | grep -q "^[^ ]*/$(BUNDLE_NAME)/Contents/MacOS/KanbanCode"; then \
+		echo "Kanban Code is running: quit it first, then run make install again."; exit 1; \
 	fi
 	@rm -rf "/Applications/$(BUNDLE_NAME)"
 	@ditto "$(BUNDLE_DIR)" "/Applications/$(BUNDLE_NAME)"
