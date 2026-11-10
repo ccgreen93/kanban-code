@@ -627,16 +627,18 @@ final class TerminalCache {
     /// to prevent residual momentum from re-entering copy-mode.
     fileprivate var copyModeExitTime: [String: ContinuousClock.Instant] = [:]
 
-    /// Wheel ticks of a session on a machine, summed until the next flush.
-    /// Each command to a machine is a round trip over the bridge, so one
-    /// command carries the ticks of the last 60 ms instead of one per tick.
-    private var remoteScrollPending: [String: Int] = [:]
-    private var remoteScrollEnter: Set<String> = []
-    private var remoteScrollFlush: [String: Task<Void, Never>] = [:]
+    /// Lines to scroll a session by, summed until the next flush. A trackpad
+    /// swipe sends dozens of small events; one tmux command carries all of
+    /// them (16 ms here, 60 ms for a machine, where each command is a round
+    /// trip over the bridge) instead of one process per event.
+    private var scrollPending: [String: Int] = [:]
+    private var scrollEnter: Set<String> = []
+    private var scrollFlush: [String: Task<Void, Never>] = [:]
+    /// The part of a line scrolled but not sent yet, so slow trackpad
+    /// movement adds up instead of being rounded away or up.
+    private var scrollRemainder: [String: Double] = [:]
 
     private init() {
-        let tmux = Self.tmuxPath
-
         // Intercept keyDown events in terminal views for two purposes:
         // 1. Shift+Enter → send \n instead of \r (Claude Code newline vs submit)
         // 2. Any key while in tmux copy-mode → exit copy-mode first, then let key through
@@ -695,7 +697,9 @@ final class TerminalCache {
         // We check terminal bounds directly instead of using hitTest, which can be
         // intercepted by SwiftUI overlay views (e.g. inspector panel).
         scrollWheelMonitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
-            guard event.deltaY != 0 else { return event }
+            // A slow trackpad movement has a coarse deltaY of 0 while its
+            // precise scrollingDeltaY is not.
+            guard event.scrollingDeltaY != 0 else { return event }
 
             // An overlay drawn over the board scrolls its own contents. The
             // bounds check below cannot see it, so without this a scroll inside
@@ -717,53 +721,11 @@ final class TerminalCache {
                 return nil // consume during cooldown
             }
 
-            if AppServices.tmux.isRemote(session) {
-                self?.scrollRemote(session: session, deltaY: event.deltaY, inCopyMode: inCopyMode)
-                return nil
-            }
-
-            if event.deltaY > 0 {
-                // Scroll UP — enter copy-mode if needed, then scroll.
-                // All scroll commands use -X (copy-mode commands) so they're
-                // no-ops if copy-mode has already been exited by another task.
-                let lines = max(1, Int(abs(event.deltaY)))
-                if !inCopyMode {
-                    self?.copyModeSessions.insert(session)
-                    self?.terminals[session]?.passthroughMode = true
-                    Task.detached {
-                        _ = try? await ShellCommand.run(tmux, arguments: ["copy-mode", "-t", session])
-                        _ = try? await ShellCommand.run(tmux, arguments: ["send-keys", "-t", session, "-X", "-N", "\(lines)", "cursor-up"])
-                    }
-                } else {
-                    Task.detached {
-                        _ = try? await ShellCommand.run(tmux, arguments: ["send-keys", "-t", session, "-X", "-N", "\(lines)", "cursor-up"])
-                    }
-                }
-            } else if inCopyMode {
-                // Scroll DOWN in copy-mode.
-                // -X cursor-down is a copy-mode command: no-op if copy-mode already exited.
-                // No literal keys ever reach the shell, regardless of concurrent task timing.
-                let lines = max(1, Int(abs(event.deltaY)))
-                Task.detached {
-                    _ = try? await ShellCommand.run(tmux, arguments: ["send-keys", "-t", session, "-X", "-N", "\(lines)", "cursor-down"])
-                    try? await Task.sleep(for: .milliseconds(50))
-                    let result = try? await ShellCommand.run(
-                        tmux, arguments: ["display-message", "-p", "-t", session, "#{scroll_position}"]
-                    )
-                    if result?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "0" {
-                        // Only the first task to reach here proceeds (remove returns nil for duplicates).
-                        let shouldExit = await MainActor.run {
-                            guard TerminalCache.shared.copyModeSessions.remove(session) != nil else { return false }
-                            TerminalCache.shared.copyModeExitTime[session] = .now
-                            TerminalCache.shared.terminals[session]?.passthroughMode = false
-                            return true
-                        }
-                        if shouldExit {
-                            _ = try? await ShellCommand.run(tmux, arguments: ["send-keys", "-t", session, "-X", "cancel"])
-                        }
-                    }
-                }
-            }
+            self?.queueScroll(
+                session: session,
+                deltaY: event.scrollingDeltaY,
+                precise: event.hasPreciseScrollingDeltas,
+                inCopyMode: inCopyMode)
 
             return nil // consume the event — don't let TerminalView handle it
         }
@@ -782,29 +744,53 @@ final class TerminalCache {
 
     // MARK: - Scroll on a machine
 
-    private func scrollRemote(session: String, deltaY: CGFloat, inCopyMode: Bool) {
-        let lines = max(1, Int(abs(deltaY)))
-        if deltaY > 0 {
+    /// Scrolls a session's view by the wheel or trackpad movement of one
+    /// event: up enters tmux copy-mode, down past the bottom leaves it.
+    /// Events are summed and sent as one tmux command per flush.
+    private func queueScroll(session: String, deltaY: CGFloat, precise: Bool, inCopyMode: Bool) {
+        let total = (scrollRemainder[session] ?? 0)
+            + Self.wheelLines(deltaY: deltaY, precise: precise, lineHeight: Self.lineHeight(fontSize: currentFontSize))
+        let lines = Int(total.rounded(.towardZero))
+        scrollRemainder[session] = total - Double(lines)
+        if lines > 0 {
             if !inCopyMode, !copyModeSessions.contains(session) {
                 copyModeSessions.insert(session)
                 terminals[session]?.passthroughMode = true
-                remoteScrollEnter.insert(session)
+                scrollEnter.insert(session)
             }
-            remoteScrollPending[session, default: 0] += lines
-        } else if inCopyMode {
-            remoteScrollPending[session, default: 0] -= lines
+            scrollPending[session, default: 0] += lines
+        } else if lines < 0, inCopyMode || copyModeSessions.contains(session) {
+            scrollPending[session, default: 0] += lines
         } else {
+            // Below a line, or down at the bottom: nothing to send. Down
+            // outside copy-mode keeps nothing back for later either.
+            if lines < 0 || (!inCopyMode && total < 0) { scrollRemainder[session] = 0 }
             return
         }
-        guard remoteScrollFlush[session] == nil else { return }
-        remoteScrollFlush[session] = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(60))
+        guard scrollFlush[session] == nil else { return }
+        let delay: Duration = AppServices.tmux.isRemote(session) ? .milliseconds(60) : .milliseconds(16)
+        scrollFlush[session] = Task { [weak self] in
+            try? await Task.sleep(for: delay)
             guard let self else { return }
-            let enter = self.remoteScrollEnter.remove(session) != nil
-            let delta = self.remoteScrollPending.removeValue(forKey: session) ?? 0
-            self.remoteScrollFlush[session] = nil
-            await self.flushRemoteScroll(session: session, enter: enter, delta: delta)
+            let enter = self.scrollEnter.remove(session) != nil
+            let delta = self.scrollPending.removeValue(forKey: session) ?? 0
+            self.scrollFlush[session] = nil
+            await self.flushScroll(session: session, enter: enter, delta: delta)
         }
+    }
+
+    /// Lines one scroll event moves: a trackpad (precise deltas) reports
+    /// points, a mouse wheel reports lines.
+    nonisolated static func wheelLines(deltaY: CGFloat, precise: Bool, lineHeight: CGFloat) -> Double {
+        guard precise else { return Double(deltaY) }
+        return Double(deltaY) / Double(max(lineHeight, 1))
+    }
+
+    /// The terminal's row height at a font size, close enough to turn a
+    /// trackpad's points into lines.
+    nonisolated static func lineHeight(fontSize: CGFloat) -> CGFloat {
+        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
+        return ceil(font.ascender - font.descender + font.leading)
     }
 
     /// The tmux adapter of a session on a machine. A machine the app has
@@ -818,13 +804,15 @@ final class TerminalCache {
         return try? AppServices.tmux.adapter(for: session)
     }
 
-    private func flushRemoteScroll(session: String, enter: Bool, delta: Int) async {
+    /// Sends one flush to the tmux server that owns the session, this Mac's
+    /// or a machine's.
+    private func flushScroll(session: String, enter: Bool, delta: Int) async {
         guard let adapter = await Self.remoteAdapter(for: session) else { return }
-        for command in Self.remoteScrollCommands(session: session, enter: enter, delta: delta) {
+        for command in Self.scrollCommands(session: session, enter: enter, delta: delta) {
             _ = try? await adapter.run(command)
         }
         guard delta < 0 else { return }
-        // Back at the bottom: leave copy-mode, as the local path does.
+        // Back at the bottom: leave copy-mode.
         let position = try? await adapter.run(["display-message", "-p", "-t", session, "#{scroll_position}"])
         guard position?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "0",
               copyModeSessions.remove(session) != nil else { return }
@@ -833,15 +821,18 @@ final class TerminalCache {
         _ = try? await adapter.run(["send-keys", "-t", session, "-X", "cancel"])
     }
 
-    /// The tmux commands of one flush: enter copy-mode when asked, then move
-    /// by the net number of lines. `-X` commands are no-ops outside copy-mode.
-    nonisolated static func remoteScrollCommands(session: String, enter: Bool, delta: Int) -> [[String]] {
+    /// The tmux commands of one flush: enter copy-mode when asked, then
+    /// scroll the view by the net number of lines. `scroll-up`/`scroll-down`
+    /// move the view; `cursor-up` only moved the copy-mode cursor, and the
+    /// view followed once that reached the top. `-X` commands are no-ops
+    /// outside copy-mode.
+    nonisolated static func scrollCommands(session: String, enter: Bool, delta: Int) -> [[String]] {
         var commands: [[String]] = []
         if enter { commands.append(["copy-mode", "-t", session]) }
         if delta > 0 {
-            commands.append(["send-keys", "-t", session, "-X", "-N", "\(delta)", "cursor-up"])
+            commands.append(["send-keys", "-t", session, "-X", "-N", "\(delta)", "scroll-up"])
         } else if delta < 0 {
-            commands.append(["send-keys", "-t", session, "-X", "-N", "\(-delta)", "cursor-down"])
+            commands.append(["send-keys", "-t", session, "-X", "-N", "\(-delta)", "scroll-down"])
         }
         return commands
     }
