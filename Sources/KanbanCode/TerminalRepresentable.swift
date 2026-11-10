@@ -564,6 +564,36 @@ final class TerminalCache {
     static let shared = TerminalCache()
     static let defaultFontSize: CGFloat = 12
     static let fontSizeKey = "sessionDetailFontSize"
+    /// Settings > General > Appearance: the terminal's font family (empty
+    /// for the system monospaced font) and its cursor.
+    static let fontFamilyKey = "terminalFontFamily"
+    static let cursorShapeKey = "terminalCursorShape"
+    static let cursorBlinkKey = "terminalCursorBlink"
+
+    /// The terminal font at a size: the chosen family, the system
+    /// monospaced font when none is chosen or it is not installed.
+    static func terminalFont(size: CGFloat, family: String? = UserDefaults.standard.string(forKey: fontFamilyKey)) -> NSFont {
+        if let family, !family.isEmpty,
+           let font = NSFontManager.shared.font(withFamily: family, traits: [], weight: 5, size: size) {
+            return font
+        }
+        return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// The cursor the settings ask for: a blinking line unless changed.
+    nonisolated static func cursorStyle(shape: String?, blink: Bool) -> CursorStyle {
+        switch shape {
+        case "block": return blink ? .blinkBlock : .steadyBlock
+        case "underline": return blink ? .blinkUnderline : .steadyUnderline
+        default: return blink ? .blinkBar : .steadyBar
+        }
+    }
+
+    static var settingsCursorStyle: CursorStyle {
+        let defaults = UserDefaults.standard
+        let blink = defaults.object(forKey: cursorBlinkKey) as? Bool ?? true
+        return cursorStyle(shape: defaults.string(forKey: cursorShapeKey), blink: blink)
+    }
 
     private var terminals: [String: BatchedTerminalView] = [:]
     private var shiftEnterMonitor: Any?
@@ -575,6 +605,8 @@ final class TerminalCache {
         let stored = UserDefaults.standard.double(forKey: TerminalCache.fontSizeKey)
         return stored > 0 ? CGFloat(stored) : TerminalCache.defaultFontSize
     }()
+    private var currentFontFamily = UserDefaults.standard.string(forKey: TerminalCache.fontFamilyKey) ?? ""
+    private var currentCursorStyle = TerminalCache.settingsCursorStyle
 
     /// Find the active (visible) session name for the terminal under the given window point.
     /// Bypasses hitTest which can be intercepted by SwiftUI overlay views.
@@ -737,7 +769,7 @@ final class TerminalCache {
             queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.applyFontSizeIfChanged()
+                self?.applyAppearanceIfChanged()
             }
         }
     }
@@ -749,7 +781,7 @@ final class TerminalCache {
     /// Events are summed and sent as one tmux command per flush.
     private func queueScroll(session: String, deltaY: CGFloat, precise: Bool, inCopyMode: Bool) {
         let total = (scrollRemainder[session] ?? 0)
-            + Self.wheelLines(deltaY: deltaY, precise: precise, lineHeight: Self.lineHeight(fontSize: currentFontSize))
+            + Self.wheelLines(deltaY: deltaY, precise: precise, lineHeight: currentLineHeight)
         let lines = Int(total.rounded(.towardZero))
         scrollRemainder[session] = total - Double(lines)
         if lines > 0 {
@@ -789,8 +821,15 @@ final class TerminalCache {
     /// The terminal's row height at a font size, close enough to turn a
     /// trackpad's points into lines.
     nonisolated static func lineHeight(fontSize: CGFloat) -> CGFloat {
-        let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular)
-        return ceil(font.ascender - font.descender + font.leading)
+        lineHeight(font: NSFont.monospacedSystemFont(ofSize: fontSize, weight: .regular))
+    }
+
+    nonisolated static func lineHeight(font: NSFont) -> CGFloat {
+        ceil(font.ascender - font.descender + font.leading)
+    }
+
+    private var currentLineHeight: CGFloat {
+        Self.lineHeight(font: Self.terminalFont(size: currentFontSize, family: currentFontFamily))
     }
 
     /// The tmux adapter of a session on a machine. A machine the app has
@@ -837,14 +876,28 @@ final class TerminalCache {
         return commands
     }
 
-    private func applyFontSizeIfChanged() {
+    /// Font size, font family and cursor from Settings, applied to every
+    /// open terminal when one of them changed.
+    private func applyAppearanceIfChanged() {
         let stored = UserDefaults.standard.double(forKey: Self.fontSizeKey)
         let newSize = stored > 0 ? CGFloat(stored) : Self.defaultFontSize
-        guard newSize != currentFontSize else { return }
-        currentFontSize = newSize
-        let font = NSFont.monospacedSystemFont(ofSize: newSize, weight: .regular)
-        for terminal in terminals.values {
-            terminal.font = font
+        let newFamily = UserDefaults.standard.string(forKey: Self.fontFamilyKey) ?? ""
+        if newSize != currentFontSize || newFamily != currentFontFamily {
+            currentFontSize = newSize
+            currentFontFamily = newFamily
+            let font = Self.terminalFont(size: newSize, family: newFamily)
+            for terminal in terminals.values {
+                terminal.font = font
+            }
+        }
+        let newCursor = Self.settingsCursorStyle
+        if newCursor != currentCursorStyle {
+            currentCursorStyle = newCursor
+            for terminal in terminals.values {
+                let core = terminal.getTerminal()
+                core.options.defaultCursorStyle = newCursor
+                core.setCursorStyle(newCursor)
+            }
         }
     }
 
@@ -873,11 +926,12 @@ final class TerminalCache {
         terminal.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1.0)
         terminal.nativeForegroundColor = NSColor(red: 0.93, green: 0.93, blue: 0.93, alpha: 1.0)
         terminal.caretColor = .systemGreen
-        // A line cursor, also after a program asks for the default style
-        // (tmux does when it attaches).
+        // The cursor of the settings (a blinking line unless changed), also
+        // after a program asks for the default style (tmux does when it
+        // attaches).
         let core = terminal.getTerminal()
-        core.options.defaultCursorStyle = .blinkBar
-        core.setCursorStyle(.blinkBar)
+        core.options.defaultCursorStyle = currentCursorStyle
+        core.setCursorStyle(currentCursorStyle)
 
         // Brighter ANSI palette (SwiftTerm Color uses UInt16 0-65535, multiply 0-255 by 257)
         let c = { (r: UInt16, g: UInt16, b: UInt16) in SwiftTerm.Color(red: r * 257, green: g * 257, blue: b * 257) }
@@ -902,7 +956,7 @@ final class TerminalCache {
             c(0xFF, 0xFF, 0xFF),  // bright white
         ])
 
-        terminal.font = NSFont.monospacedSystemFont(ofSize: currentFontSize, weight: .regular)
+        terminal.font = Self.terminalFont(size: currentFontSize, family: currentFontFamily)
 
         // Do NOT set autoresizingMask — we manage frame explicitly in layout()
         // to avoid intermediate sizes triggering tmux redraws during animations.

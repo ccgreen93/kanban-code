@@ -838,12 +838,25 @@ struct GeneralSettingsView: View {
     @AppStorage("preferredEditorBundleId") private var editorBundleId: String = "dev.zed.Zed"
     @AppStorage("uiTextSize") private var uiTextSize: Int = 1
     @AppStorage("sessionDetailFontSize") private var sessionDetailFontSize: Double = Double(TerminalCache.defaultFontSize)
+    @AppStorage(TerminalCache.fontFamilyKey) private var terminalFontFamily: String = ""
+    @AppStorage(TerminalCache.cursorShapeKey) private var terminalCursorShape: String = "bar"
+    @AppStorage(TerminalCache.cursorBlinkKey) private var terminalCursorBlink: Bool = true
+    @State private var monospacedFamilies: [String] = []
     @State private var installedEditors: [EditorDiscovery.Editor] = []
     @State private var showOnboarding = false
     @State private var mergeCommand: String = GitHubSettings.defaultMergeCommand
     @State private var mergeSaveTask: Task<Void, Never>?
 
     private let settingsStore = SettingsStore()
+
+    /// Installed font families whose regular face is monospaced.
+    static func monospacedFontFamilies() -> [String] {
+        let manager = NSFontManager.shared
+        return manager.availableFontFamilies.filter { family in
+            guard let font = manager.font(withFamily: family, traits: [], weight: 5, size: 12) else { return false }
+            return font.isFixedPitch
+        }.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+    }
 
     var body: some View {
         Form {
@@ -878,6 +891,28 @@ struct GeneralSettingsView: View {
                     Stepper("", value: $sessionDetailFontSize, in: 8...24, step: 1)
                         .labelsHidden()
                 }
+
+                Picker("Terminal font", selection: $terminalFontFamily) {
+                    Text("System (SF Mono)").tag("")
+                    // A family no longer installed still shows, so the
+                    // picker does not jump; the terminal uses the system font.
+                    if !terminalFontFamily.isEmpty, !monospacedFamilies.contains(terminalFontFamily) {
+                        Text("\(terminalFontFamily) (not installed)").tag(terminalFontFamily)
+                    }
+                    ForEach(monospacedFamilies, id: \.self) { family in
+                        Text(family).tag(family)
+                    }
+                }
+                Text("For oh-my-zsh or Powerlevel10k icons, pick a Nerd Font (for example MesloLGS Nerd Font Mono).")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+
+                Picker("Terminal cursor", selection: $terminalCursorShape) {
+                    Text("Line").tag("bar")
+                    Text("Block").tag("block")
+                    Text("Underline").tag("underline")
+                }
+                Toggle("Blinking cursor", isOn: $terminalCursorBlink)
 
                 HStack {
                     Text("⌘+ / ⌘- to adjust both, or set independently here.")
@@ -956,6 +991,7 @@ struct GeneralSettingsView: View {
         .padding()
         .onAppear {
             installedEditors = EditorDiscovery.installedEditors()
+            monospacedFamilies = Self.monospacedFontFamilies()
         }
         .task {
             if let settings = try? await settingsStore.read() {
