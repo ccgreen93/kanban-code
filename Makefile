@@ -100,11 +100,11 @@ app: build cli install-cli web
 # Installs the app into /Applications (cg-main: this fork's own version).
 # Quit Kanban Code first; its tmux sessions keep running meanwhile.
 install:
-	@$(MAKE) --no-print-directory app NO_REGISTER=1
 	@# ps, not pgrep -f: the pattern would match this shell's own command line.
 	@if ps -axo command= | grep -q "^[^ ]*/$(BUNDLE_NAME)/Contents/MacOS/KanbanCode"; then \
 		echo "Kanban Code is running: quit it first, then run make install again."; exit 1; \
 	fi
+	@$(MAKE) --no-print-directory app NO_REGISTER=1
 	@rm -rf "/Applications/$(BUNDLE_NAME)"
 	@ditto "$(BUNDLE_DIR)" "/Applications/$(BUNDLE_NAME)"
 	@Scripts/register-app.sh "/Applications/$(BUNDLE_NAME)" $(BUNDLE_ID)
