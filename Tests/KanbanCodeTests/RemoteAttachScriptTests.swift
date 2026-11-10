@@ -76,17 +76,27 @@ struct RemoteAttachScriptTests {
             == "export RUSH_COPY_ON_SELECT=0 AGTOP_COPY_ON_SELECT=0; while :; do '/Users/me/go/bin/agtop' 'open' '0a1b2c3d' '--solo'; sleep 0.3; done")
     }
 
-    @Test("wheel ticks on a machine become one copy-mode move per flush")
-    func remoteScrollCommands() {
-        #expect(TerminalCache.remoteScrollCommands(session: "s", enter: true, delta: 5) == [
+    @Test("a flush of wheel or trackpad movement scrolls the view by the net lines, entering copy-mode first")
+    func scrollCommands() {
+        #expect(TerminalCache.scrollCommands(session: "s", enter: true, delta: 5) == [
             ["copy-mode", "-t", "s"],
-            ["send-keys", "-t", "s", "-X", "-N", "5", "cursor-up"],
+            ["send-keys", "-t", "s", "-X", "-N", "5", "scroll-up"],
         ])
-        #expect(TerminalCache.remoteScrollCommands(session: "s", enter: false, delta: -3) == [
-            ["send-keys", "-t", "s", "-X", "-N", "3", "cursor-down"],
+        #expect(TerminalCache.scrollCommands(session: "s", enter: false, delta: -3) == [
+            ["send-keys", "-t", "s", "-X", "-N", "3", "scroll-down"],
         ])
-        // Ticks that cancel out send nothing.
-        #expect(TerminalCache.remoteScrollCommands(session: "s", enter: false, delta: 0).isEmpty)
+        // Movement that cancels out sends nothing.
+        #expect(TerminalCache.scrollCommands(session: "s", enter: false, delta: 0).isEmpty)
+    }
+
+    @Test("a trackpad's points become lines by row height, a mouse wheel's lines stay lines")
+    func wheelLines() {
+        #expect(TerminalCache.wheelLines(deltaY: 3, precise: false, lineHeight: 16) == 3)
+        #expect(TerminalCache.wheelLines(deltaY: 32, precise: true, lineHeight: 16) == 2)
+        #expect(TerminalCache.wheelLines(deltaY: -8, precise: true, lineHeight: 16) == -0.5)
+        #expect(TerminalCache.wheelLines(deltaY: 10, precise: true, lineHeight: 0) == 10)
+        let height = TerminalCache.lineHeight(fontSize: 12)
+        #expect(height >= 12 && height <= 20)
     }
 
     @Test("without a marker the attach is retried right away")
