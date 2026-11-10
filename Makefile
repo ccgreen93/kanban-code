@@ -1,4 +1,4 @@
-.PHONY: build test run app app-debug run-app run-release clean cli install-cli web ios-project ios ios-run ios-test ios-device ios-autoinstall ios-autoinstall-remove rush-plugins
+.PHONY: build test run app app-debug run-app run-release clean cli install-cli install web ios-project ios ios-run ios-test ios-device ios-autoinstall ios-autoinstall-remove rush-plugins
 
 BUNDLE_NAME = KanbanCode.app
 BUNDLE_DIR = build/$(BUNDLE_NAME)
@@ -94,6 +94,17 @@ app: build cli install-cli web
 	@# notification clicks open this build and macOS picks up the icon
 	@Scripts/register-app.sh $(BUNDLE_DIR) $(BUNDLE_ID)
 	@echo "Built $(BUNDLE_DIR)"
+
+# Installs the app into /Applications (cg-main: this fork's own version).
+# Quit Kanban Code first; its tmux sessions keep running meanwhile.
+install: app
+	@if pgrep -f "/Applications/$(BUNDLE_NAME)/Contents/MacOS/KanbanCode" >/dev/null; then \
+		echo "Kanban Code is running from /Applications: quit it first, then run make install again."; exit 1; \
+	fi
+	@rm -rf "/Applications/$(BUNDLE_NAME)"
+	@ditto "$(BUNDLE_DIR)" "/Applications/$(BUNDLE_NAME)"
+	@Scripts/register-app.sh "/Applications/$(BUNDLE_NAME)" $(BUNDLE_ID)
+	@echo "Installed /Applications/$(BUNDLE_NAME)"
 
 app-debug:
 	@$(MAKE) app CONFIG=debug
