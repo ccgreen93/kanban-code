@@ -435,6 +435,9 @@ public final class AppState: @unchecked Sendable {
 
     /// Cards presented above the normal lanes while retaining their real column.
     public internal(set) var pinnedCards: [KanbanCodeCard] = []
+    /// Long-running agent cards, shown in the Agents section beside the
+    /// board, oldest first so the list does not reshuffle as agents work.
+    public internal(set) var agentCards: [KanbanCodeCard] = []
 
     /// The card list of the sidebar, in order (`SidebarLayout`).
     public internal(set) var sidebarSections: [SidebarSection] = []
@@ -614,7 +617,18 @@ public final class AppState: @unchecked Sendable {
         let newDescendantCounts = SubagentHierarchy.descendantCounts(in: links)
         if newDescendantCounts != descendantCounts { descendantCounts = newDescendantCounts }
 
-        let newPinned = newFiltered.filter { $0.link.isPinned && $0.link.parentCardId == nil }.sorted {
+        let newAgents = newFiltered.filter {
+            $0.link.isAgent && $0.link.parentCardId == nil && !$0.link.manuallyArchived
+        }.sorted {
+            let a = $0.link.agentAt ?? .distantPast
+            let b = $1.link.agentAt ?? .distantPast
+            return a != b ? a < b : $0.id < $1.id
+        }
+        if newAgents != agentCards { agentCards = newAgents }
+
+        let newPinned = newFiltered.filter {
+            $0.link.isPinned && !$0.link.isAgent && $0.link.parentCardId == nil
+        }.sorted {
             switch ($0.link.pinnedSortOrder, $1.link.pinnedSortOrder) {
             case (let a?, let b?) where a != b: return a < b
             case (_?, nil): return true
@@ -661,8 +675,9 @@ public final class AppState: @unchecked Sendable {
         if newVisible != visibleColumns { visibleColumns = newVisible }
 
         let newSidebar = SidebarLayout.sections(
+            agents: newAgents,
             pinned: newPinned,
-            cardsByColumn: newByColumn.mapValues { $0.filter { !$0.link.isPinned } },
+            cardsByColumn: newByColumn.mapValues { $0.filter { !$0.link.isPinned && !$0.link.isAgent } },
             isLive: { liveIds.contains($0.id) },
             isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true }
         )
@@ -686,9 +701,9 @@ public final class AppState: @unchecked Sendable {
         cardsByColumn[column] ?? []
     }
 
-    /// Lane presentation excludes pinned cards, but their underlying column is unchanged.
+    /// Lane presentation excludes pinned and agent cards, but their underlying column is unchanged.
     public func unpinnedCards(in column: KanbanCodeColumn) -> [KanbanCodeCard] {
-        cards(in: column).filter { !$0.link.isPinned }
+        cards(in: column).filter { !$0.link.isPinned && !$0.link.isAgent }
     }
 
     public func cardCount(in column: KanbanCodeColumn) -> Int {
@@ -753,6 +768,8 @@ public enum Action: Sendable {
     case renameCard(cardId: String, name: String)
     case setCardPinned(cardId: String, isPinned: Bool)
     case setCardPriority(cardId: String, priority: CardPriority?)
+    /// Make a card a long-running agent (Agents section) or put it back on the board.
+    case setCardAgent(cardId: String, isAgent: Bool)
     case setSelfCompactContextThreshold(cardId: String, thresholdTokens: Int?)
     case relinkSession(cardId: String, sessionLink: SessionLink)
     case sessionModelsScanned([String: String])
@@ -1293,6 +1310,8 @@ public enum Reducer {
             link.sortOrder = nil
             link.column = column
             link.manualOverrides.column = true
+            // Dropping an agent onto a lane makes it a task again.
+            link.agentAt = nil
             if column == .allSessions {
                 link.manuallyArchived = true
                 link.pinnedAt = nil
@@ -1369,6 +1388,27 @@ public enum Reducer {
         case .setCardPriority(let cardId, let priority):
             guard var link = state.links[cardId], link.priority != priority else { return [] }
             link.priority = priority
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
+
+        case .setCardAgent(let cardId, let isAgent):
+            guard var link = state.links[cardId] else { return [] }
+            guard link.parentCardId == nil else { return [] }
+            if isAgent {
+                if link.agentAt != nil { return [] }
+                link.agentAt = .now
+                if link.headless == true { link.headless = false }
+                // An agent is not also a pin: the Agents section already
+                // keeps it in view, and one card in two rail sections reads
+                // as a duplicate.
+                link.pinnedAt = nil
+                link.pinnedSortOrder = nil
+                Self.unarchive(&link)
+            } else {
+                if link.agentAt == nil { return [] }
+                link.agentAt = nil
+            }
             link.updatedAt = .now
             state.links[cardId] = link
             return [.upsertLink(link)]
@@ -2408,6 +2448,7 @@ public enum Reducer {
                 target.pinnedAt = source.pinnedAt
                 target.pinnedSortOrder = source.pinnedSortOrder
             }
+            if target.agentAt == nil { target.agentAt = source.agentAt }
             // Merge PR links (deduplicate by PR number)
             let existingPRNumbers = Set(target.prLinks.map(\.number))
             for pr in source.prLinks where !existingPRNumbers.contains(pr.number) {

@@ -53,6 +53,7 @@ public enum LinkSync {
         SharedField("pinnedAt", \.pinnedAt),
         SharedField("pinnedSortOrder", \.pinnedSortOrder),
         SharedField("priority", \.priority),
+        SharedField("agentAt", \.agentAt),
         SharedField("assistant", \.assistant),
         SharedField("deletedAt", \.deletedAt),
     ]
@@ -322,7 +323,7 @@ public enum LinkSync {
     /// foreign cards exactly as their owner sent them.
     public static func allowsForeignEdits(_ action: Action) -> Bool {
         switch action {
-        case .moveCard, .renameCard, .setCardPinned, .setSelfCompactContextThreshold, .setCardModel,
+        case .moveCard, .renameCard, .setCardPinned, .setCardAgent, .setSelfCompactContextThreshold, .setCardModel,
              .archiveCard, .unarchiveCard, .deleteCard, .reorderCard, .reorderPinnedCard, .updatePrompt,
              .addIssueLinkToCard, .addPRToCard, .markPRMerged, .unlinkFromCard, .createManualTask:
             return true

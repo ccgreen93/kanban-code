@@ -508,6 +508,79 @@ struct ReducerTests {
         #expect(unpinEffects.contains(where: { if case .upsertLink = $0 { return true }; return false }))
     }
 
+    // MARK: - Agent Card
+
+    @Test("setCardAgent moves a card off the lanes into Agents and back, keeping its column")
+    func setCardAgentRoundTrip() {
+        let link = makeLink(id: "card_agent1", column: .waiting)
+        var state = stateWith([link])
+
+        let effects = Reducer.reduce(state: &state, action: .setCardAgent(cardId: "card_agent1", isAgent: true))
+        state.rebuildCards()
+
+        #expect(state.links["card_agent1"]?.isAgent == true)
+        #expect(state.links["card_agent1"]?.column == .waiting)
+        #expect(state.agentCards.map(\.id) == ["card_agent1"])
+        #expect(state.unpinnedCards(in: .waiting).isEmpty, "an agent is not shown in a lane")
+        #expect(state.sidebarSections.first?.kind == .agents)
+        #expect(!state.sidebarSections.contains { $0.kind != .agents && $0.cards.contains { $0.id == "card_agent1" } })
+        #expect(effects.contains(where: { if case .upsertLink = $0 { return true }; return false }))
+
+        _ = Reducer.reduce(state: &state, action: .setCardAgent(cardId: "card_agent1", isAgent: false))
+        state.rebuildCards()
+
+        #expect(state.links["card_agent1"]?.isAgent == false)
+        #expect(state.agentCards.isEmpty)
+        #expect(state.unpinnedCards(in: .waiting).map(\.id) == ["card_agent1"])
+    }
+
+    @Test("Making a pinned card an agent unpins it, so it shows once")
+    func setCardAgentUnpins() {
+        let link = makeLink(id: "card_agent2", column: .inProgress)
+        var state = stateWith([link])
+        _ = Reducer.reduce(state: &state, action: .setCardPinned(cardId: "card_agent2", isPinned: true))
+        _ = Reducer.reduce(state: &state, action: .setCardAgent(cardId: "card_agent2", isAgent: true))
+        state.rebuildCards()
+
+        #expect(state.links["card_agent2"]?.isPinned == false)
+        #expect(state.pinnedCards.isEmpty)
+        #expect(state.agentCards.map(\.id) == ["card_agent2"])
+    }
+
+    @Test("Dropping an agent onto a lane makes it a task again")
+    func moveCardClearsAgent() {
+        var link = makeLink(id: "card_agent3", column: .waiting)
+        link.agentAt = .now
+        var state = stateWith([link])
+
+        _ = Reducer.reduce(state: &state, action: .moveCard(cardId: "card_agent3", to: .inProgress))
+        state.rebuildCards()
+
+        #expect(state.links["card_agent3"]?.isAgent == false)
+        #expect(state.agentCards.isEmpty)
+    }
+
+    @Test("A subagent cannot be made an agent")
+    func setCardAgentIgnoresSubagents() {
+        var child = makeLink(id: "card_child", column: .inProgress)
+        child.parentCardId = "card_parent"
+        var state = stateWith([makeLink(id: "card_parent"), child])
+
+        let effects = Reducer.reduce(state: &state, action: .setCardAgent(cardId: "card_child", isAgent: true))
+        #expect(effects.isEmpty)
+        #expect(state.links["card_child"]?.isAgent == false)
+    }
+
+    @Test("agentAt survives an encode/decode round trip")
+    func agentAtCodable() throws {
+        var link = makeLink(id: "card_agent4")
+        link.agentAt = Date(timeIntervalSince1970: 1_800_000_000)
+        let data = try JSONEncoder().encode(link)
+        let decoded = try JSONDecoder().decode(Link.self, from: data)
+        #expect(decoded.agentAt == link.agentAt)
+        #expect(decoded.isAgent)
+    }
+
     @Test("Pinning an archived card brings it back onto the board")
     func setCardPinnedUnarchives() {
         var link = makeLink(id: "card_arch1", column: .allSessions)

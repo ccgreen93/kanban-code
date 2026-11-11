@@ -98,6 +98,9 @@ struct ContentView: View {
     @AppStorage("showBoardInExpanded") var showBoardInExpanded = false
     @State var sidebarVisibility: NavigationSplitViewVisibility = .detailOnly
     @State var showNewTask = false
+    /// The open New Task sheet was opened from the Agents section, so the
+    /// card it creates becomes a long-running agent.
+    @State var newTaskAsAgent = false
     @State var showOnboarding = false
     @State var showCreateChannel = false
     @State var renameChannelName: String? = nil
@@ -280,6 +283,10 @@ struct ContentView: View {
             let cleanupBranchCounts = activeWorktreeBranchCounts
             return BoardView(
             store: store,
+            onNewAgent: {
+                newTaskAsAgent = true
+                showNewTask = true
+            },
             onOpenChannel: { name in store.dispatch(.selectChannel(name: name)) },
             onNewChannel: { showCreateChannel = true },
             onDeleteChannel: { name in presentDialog(.confirmDeleteChannel(name: name)) },
@@ -900,6 +907,12 @@ struct ContentView: View {
 
     private var boardWithSheets: some View {
         boardWithOverlays
+            .environment(\.setCardAgent) { cardId, isAgent in
+                store.dispatch(.setCardAgent(cardId: cardId, isAgent: isAgent))
+            }
+            .onChange(of: showNewTask) { _, isShown in
+                if !isShown { newTaskAsAgent = false }
+            }
             .sheet(isPresented: $showNewTask) {
                 NewTaskDialog(
                     isPresented: $showNewTask,
@@ -2361,7 +2374,10 @@ struct ContentView: View {
             showBranchInfo: true,
             availableProjects: projectList,
             enabledAssistants: assistantRegistry.available,
-            environment: .live(for: card)
+            environment: .live(for: card),
+            onSetAgent: { [self] isAgent in
+                store.dispatch(.setCardAgent(cardId: card.id, isAgent: isAgent))
+            }
         )
         var cmds = catalog.paletteEntries.map { entry in
             CommandItem(id: entry.id, entry.title, icon: entry.icon, shortcut: entry.shortcut?.displayString, action: entry.run)
@@ -2963,7 +2979,8 @@ struct ContentView: View {
             column: startImmediately ? .inProgress : .backlog,
             source: .manual,
             promptBody: trimmed,
-            promptImagePaths: imagePaths
+            promptImagePaths: imagePaths,
+            agentAt: newTaskAsAgent ? .now : nil
         )
 
         store.dispatch(.createManualTask(link))
@@ -2997,6 +3014,7 @@ struct ContentView: View {
             assistant: assistant
         )
         link.apiServiceId = apiServiceId
+        if newTaskAsAgent { link.agentAt = .now }
         let effectivePath = projectPath ?? NSHomeDirectory()
 
         store.dispatch(.createManualTask(link))

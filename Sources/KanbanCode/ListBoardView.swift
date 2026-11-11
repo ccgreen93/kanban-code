@@ -47,7 +47,7 @@ struct ListBoardView: View {
     /// Live, then the columns, Backlog last (`SidebarLayout`). Pinned is
     /// drawn on its own above, with its reordering.
     private var sections: [SidebarSection] {
-        store.state.sidebarSections.filter { $0.kind != .pinned }
+        store.state.sidebarSections.filter { $0.kind != .pinned && $0.kind != .agents }
     }
 
     private var activeSubagentCardsByParent: [String: [KanbanCodeCard]] {
@@ -99,6 +99,9 @@ struct ListBoardView: View {
             // engine while it reconciles the row across section boundaries.
             // There are only a handful of sections; row bodies remain lazy.
             VStack(alignment: .leading, spacing: 0) {
+                if let agents = store.state.sidebarSections.first(where: { $0.kind == .agents }) {
+                    sectionView(for: agents)
+                }
                 channelsSection
                 pinnedCardsSection
                 ForEach(sections, id: \.kind) { section in
@@ -976,6 +979,7 @@ private extension View {
 extension SidebarSectionKind {
     var accentColor: Color {
         switch self {
+        case .agents: .purple
         case .pinned: .secondary
         case .live: .mint
         case .column(let column): column.accentColor

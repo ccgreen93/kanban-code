@@ -93,9 +93,23 @@ struct CardActionsMenuActions {
     }
 }
 
+private struct SetCardAgentKey: EnvironmentKey {
+    static let defaultValue: (@MainActor (_ cardId: String, _ isAgent: Bool) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    /// Dispatches `.setCardAgent`, so every card menu can offer Move to
+    /// Agents without threading another closure through each card view.
+    var setCardAgent: (@MainActor (_ cardId: String, _ isAgent: Bool) -> Void)? {
+        get { self[SetCardAgentKey.self] }
+        set { self[SetCardAgentKey.self] = newValue }
+    }
+}
+
 struct CardActionsMenu: View {
     let card: KanbanCodeCard
     let actions: CardActionsMenuActions
+    @Environment(\.setCardAgent) private var setCardAgent
     var showBranchInfo = false
     var githubBaseURL: String?
 
@@ -110,7 +124,11 @@ struct CardActionsMenu: View {
             githubBaseURL: githubBaseURL,
             availableProjects: availableProjects,
             enabledAssistants: enabledAssistants,
-            environment: .live(for: card)
+            environment: .live(for: card),
+            onSetAgent: setCardAgent.map { setAgent in
+                let cardId = card.id
+                return { isAgent in setAgent(cardId, isAgent) }
+            }
         )
         let sections = catalog.sections
         ForEach(Array(sections.enumerated()), id: \.offset) { index, section in

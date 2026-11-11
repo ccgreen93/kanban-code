@@ -110,6 +110,9 @@ struct CardActionCatalog {
     var availableProjects: [(name: String, path: String)] = []
     var enabledAssistants: [CodingAssistant] = []
     let environment: CardActionEnvironment
+    /// Moves the card into or out of the Agents section. Nil where the menu
+    /// has no store to dispatch to, which leaves the item out.
+    var onSetAgent: ((_ isAgent: Bool) -> Void)? = nil
 
     var sections: [[CardActionItem]] {
         [
@@ -264,6 +267,14 @@ struct CardActionCatalog {
                 icon: pinned ? "pin.slash" : "pin",
                 shortcut: .togglePin, kind: .perform { actions.onSetPinned(!pinned) }
             ))
+            if let onSetAgent {
+                let isAgent = card.link.isAgent
+                items.append(CardActionItem(
+                    id: "agent", title: isAgent ? "Move to Board" : "Move to Agents",
+                    icon: isAgent ? "rectangle.split.3x1" : "person.2.wave.2",
+                    kind: .perform { onSetAgent(!isAgent) }
+                ))
+            }
         }
         items.append(priorityItem)
         items.append(compactSettingsItem)

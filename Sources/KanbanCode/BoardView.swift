@@ -8,6 +8,10 @@ struct BoardView: View {
     @State private var sidebarReorderState = SidebarReorderState()
     @State private var renamingPinnedCardId: String?
     @State private var collapsedPinnedSubagentParents: Set<String> = []
+    @AppStorage("boardRail.agentsCollapsed") private var agentsCollapsed = false
+    @AppStorage("boardRail.channelsCollapsed") private var channelsCollapsed = false
+    @AppStorage("boardRail.pinnedCollapsed") private var pinnedCollapsed = false
+    var onNewAgent: () -> Void = {}
     var onOpenChannel: (String) -> Void = { _ in }
     var onNewChannel: () -> Void = {}
     var onDeleteChannel: (String) -> Void = { _ in }
@@ -62,45 +66,106 @@ struct BoardView: View {
     private var channelsPseudoColumn: some View {
         let channels = store.state.channels
         let pinnedCards = store.state.pinnedCards
+        let agentCards = store.state.agentCards
         let descendantCounts = store.state.descendantCounts
-        if !channels.isEmpty || !pinnedCards.isEmpty {
-            // The rail scrolls on its own. Bare, its height grows with the
-            // pinned count, and a rail taller than the window vertically
-            // centers the whole horizontal board: every column header and
-            // the first cards of every column end up above the screen.
-            ScrollView {
-                railContent(channels: channels, pinnedCards: pinnedCards, descendantCounts: descendantCounts)
-                    .padding(.horizontal, 6)
-            }
-            .frame(width: 240, alignment: .top)
+        // The rail scrolls on its own. Bare, its height grows with the
+        // pinned count, and a rail taller than the window vertically
+        // centers the whole horizontal board: every column header and
+        // the first cards of every column end up above the screen.
+        ScrollView {
+            railContent(
+                agentCards: agentCards,
+                channels: channels,
+                pinnedCards: pinnedCards,
+                descendantCounts: descendantCounts
+            )
+            .padding(.horizontal, 6)
         }
+        .frame(width: 240, alignment: .top)
+    }
+
+    /// A collapsible section header for the rail. Subtle, so the rail reads
+    /// as a side panel without competing with the real columns.
+    private func railHeader(
+        _ title: String,
+        icon: String,
+        count: Int,
+        isCollapsed: Binding<Bool>,
+        addHelp: String? = nil,
+        onAdd: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) { isCollapsed.wrappedValue.toggle() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .rotationEffect(.degrees(isCollapsed.wrappedValue ? 0 : 90))
+                        .frame(width: 10)
+                    Image(systemName: icon)
+                    Text(title)
+                    if count > 0 { Text("\(count)") }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(isCollapsed.wrappedValue ? "Expand \(title)" : "Collapse \(title)")
+            if let onAdd {
+                Button(action: onAdd) {
+                    Image(systemName: "plus")
+                        .font(.app(.caption))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .help(addHelp ?? "New")
+            }
+        }
+        .font(.app(.caption, weight: .semibold))
+        .foregroundStyle(.tertiary)
+        .textCase(.uppercase)
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
     }
 
     private func railContent(
+        agentCards: [KanbanCodeCard],
         channels: [Channel],
         pinnedCards: [KanbanCodeCard],
         descendantCounts: [String: Int]
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-                if !channels.isEmpty {
-                    // Subtle header so the column reads as "Channels" without competing with real columns.
-                    HStack(spacing: 6) {
-                        Text("Channels")
-                            .font(.app(.caption, weight: .semibold))
+                railHeader(
+                    "Agents", icon: "person.2.wave.2", count: agentCards.count,
+                    isCollapsed: $agentsCollapsed,
+                    addHelp: "New long-running agent", onAdd: onNewAgent
+                )
+                if !agentsCollapsed {
+                    if agentCards.isEmpty {
+                        Text("Long-running sessions (conductor, butler) live here. Add one with +, or right-click a card → Move to Agents.")
+                            .font(.app(.caption))
                             .foregroundStyle(.tertiary)
-                            .textCase(.uppercase)
-                        Spacer(minLength: 0)
-                        Button(action: onNewChannel) {
-                            Image(systemName: "plus")
-                                .font(.app(.caption))
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("New chat channel")
+                            .padding(.horizontal, 10)
                     }
-                    .padding(.horizontal, 10)
-                    .padding(.top, 2)
+                    ForEach(agentCards) { card in
+                        pinnedCardView(for: card, descendantCounts: descendantCounts)
+                        ForEach(visiblePinnedSubagents(for: card.id)) { row in
+                            if let child = activeSubagentCardsById[row.cardId] {
+                                pinnedCardView(for: child, descendantCounts: descendantCounts)
+                                    .padding(.leading, CGFloat(row.depth * 16))
+                            }
+                        }
+                    }
+                }
 
+                railHeader(
+                    "Channels", icon: "number", count: channels.count,
+                    isCollapsed: $channelsCollapsed,
+                    addHelp: "New chat channel", onAdd: onNewChannel
+                )
+                .padding(.top, 6)
+                if !channelsCollapsed {
                     ForEach(channels) { ch in
                         let msgs = store.state.channelMessages[ch.name]
                         let last = msgs?.last
@@ -132,18 +197,13 @@ struct BoardView: View {
                 }
 
                 if !pinnedCards.isEmpty {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pin.fill")
-                        Text("Pinned")
-                        Spacer(minLength: 0)
-                        Text("\(pinnedCards.count)")
-                    }
-                    .font(.app(.caption, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .textCase(.uppercase)
-                    .padding(.horizontal, 10)
-                    .padding(.top, channels.isEmpty ? 2 : 6)
-
+                    railHeader(
+                        "Pinned", icon: "pin.fill", count: pinnedCards.count,
+                        isCollapsed: $pinnedCollapsed
+                    )
+                    .padding(.top, 6)
+                }
+                if !pinnedCards.isEmpty && !pinnedCollapsed {
                     ForEach(pinnedCards) { card in
                         SidebarReorderableRow(
                             item: .pinnedCard(card.id),
@@ -246,7 +306,8 @@ struct BoardView: View {
                 // Scroll to the column containing the selected card
                 guard let selectedId = store.state.selectedCardId else { return }
                 let rootId = SubagentHierarchy.rootId(of: selectedId, in: store.state.links)
-                if store.state.pinnedCards.contains(where: { $0.id == rootId }) {
+                if store.state.pinnedCards.contains(where: { $0.id == rootId })
+                    || store.state.agentCards.contains(where: { $0.id == rootId }) {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         proxy.scrollTo("channels", anchor: .leading)
                     }
