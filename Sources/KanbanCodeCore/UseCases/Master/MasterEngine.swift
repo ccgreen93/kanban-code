@@ -383,6 +383,13 @@ public final class MasterEngine {
                     do {
                         let imageSender = ImageSender(tmux: tmux)
                         try await imageSender.waitForReady(sessionName: tmuxName, assistant: assistant)
+                        if assistant == .claude && !RushSessionName.isRush(tmuxName) {
+                            let tmux = self.tmux
+                            try await imageSender.waitForPasteReady(
+                                sessionName: tmuxName,
+                                clearComposer: { _ = try await tmux.clearComposer(sessionName: tmuxName) }
+                            )
+                        }
 
                         if let preparation = boxdPreparation, !images.isEmpty {
                             // The clipboard does not reach the machine: the
@@ -397,13 +404,33 @@ public final class MasterEngine {
                                 try await tmux.sendPrompt(to: tmuxName, text: promptToSend)
                             }
                         } else if !images.isEmpty && assistant.supportsImageUpload, let setClipboard = platform.setClipboardImage {
-                            try await imageSender.sendPromptWithImages(
-                                sessionName: tmuxName,
-                                prompt: prompt,
-                                images: images,
-                                assistant: assistant,
-                                setClipboard: setClipboard
-                            )
+                            do {
+                                try await imageSender.sendPromptWithImages(
+                                    sessionName: tmuxName,
+                                    prompt: prompt,
+                                    images: images,
+                                    assistant: assistant,
+                                    setClipboard: setClipboard
+                                )
+                            } catch let error as ImageSendError {
+                                // The clipboard route failed: still deliver the
+                                // prompt, with the images as file paths the
+                                // assistant can read, instead of leaving an
+                                // empty session.
+                                KanbanCodeLog.warn("launch", "Image paste failed for card=\(cardId.prefix(12)) (\(error.localizedDescription)); sending the prompt with image paths instead")
+                                _ = try? await tmux.clearComposer(sessionName: tmuxName)
+                                let imagePaths = images.compactMap { image -> String? in
+                                    if let tempPath = image.tempPath { return tempPath }
+                                    var copy = image
+                                    return try? copy.saveToTemp()
+                                }
+                                let promptToSend = PromptImageLayout.replacingMarkersWithMarkdown(in: prompt, imagePaths: imagePaths)
+                                if assistant.submitsPromptWithPaste {
+                                    try await tmux.pastePrompt(to: tmuxName, text: promptToSend)
+                                } else {
+                                    try await tmux.sendPrompt(to: tmuxName, text: promptToSend)
+                                }
+                            }
                         } else if !prompt.isEmpty {
                             let imagePaths = images.compactMap { image -> String? in
                                 if let tempPath = image.tempPath { return tempPath }

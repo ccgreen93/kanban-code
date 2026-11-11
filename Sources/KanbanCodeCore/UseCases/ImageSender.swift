@@ -56,6 +56,51 @@ public actor ImageSender {
         throw ImageSendError.assistantNotReady(assistant)
     }
 
+    /// Marker pasted by `waitForPasteReady`; distinctive so it never matches
+    /// placeholder text Claude shows in an empty composer.
+    static let pasteProbe = "kanban-paste-check"
+
+    /// A Claude that has only just drawn its prompt can drop the first paste
+    /// event (text or image) without a trace, which leaves the launch prompt
+    /// missing. Paste a marker until it shows in the composer, then erase it,
+    /// so the real prompt only goes in once pastes are being taken.
+    /// Returns false when the marker never showed; the caller sends anyway.
+    @discardableResult
+    public func waitForPasteReady(
+        sessionName: String,
+        clearComposer: @Sendable () async throws -> Void,
+        pollInterval: Duration = .milliseconds(250),
+        repasteInterval: Duration = .milliseconds(1500),
+        timeout: Duration = .seconds(12)
+    ) async throws -> Bool {
+        let start = ContinuousClock.now
+        try await tmux.pasteText(to: sessionName, text: Self.pasteProbe)
+        var lastPaste = ContinuousClock.now
+        var seen = false
+        while ContinuousClock.now - start < timeout {
+            try await Task.sleep(for: pollInterval)
+            if try await tmux.capturePane(sessionName: sessionName).contains(Self.pasteProbe) {
+                seen = true
+                break
+            }
+            if ContinuousClock.now - lastPaste >= repasteInterval {
+                KanbanCodeLog.info("launch", "Paste check not shown yet in \(sessionName), pasting again")
+                try await tmux.pasteText(to: sessionName, text: Self.pasteProbe)
+                lastPaste = ContinuousClock.now
+            }
+        }
+        // Erase the marker (and any late copies of it) before the real prompt.
+        for _ in 0..<5 {
+            try await clearComposer()
+            try await Task.sleep(for: pollInterval)
+            if !(try await tmux.capturePane(sessionName: sessionName).contains(Self.pasteProbe)) { break }
+        }
+        if !seen {
+            KanbanCodeLog.warn("launch", "Paste check never showed in \(sessionName); sending the prompt anyway")
+        }
+        return seen
+    }
+
     /// Send images one by one, confirming each before sending the next.
     ///
     /// - Parameters:
@@ -70,7 +115,8 @@ public actor ImageSender {
         assistant: CodingAssistant = .claude,
         setClipboard: @Sendable (Data) -> Void,
         pollInterval: Duration = .milliseconds(500),
-        timeout: Duration = .seconds(30)
+        timeout: Duration = .seconds(30),
+        repasteInterval: Duration = .seconds(3)
     ) async throws {
         for (index, image) in images.enumerated() {
             // Count before sending
@@ -80,17 +126,29 @@ public actor ImageSender {
             setClipboard(image.data)
             try await tmux.sendBracketedPaste(to: sessionName)
 
-            // Poll until count goes up
+            // Poll until count goes up. A Claude that has only just drawn its
+            // prompt drops the first paste event without reading the
+            // clipboard, so paste again while nothing has arrived. A warm
+            // Claude shows the chip within a second, well inside the interval.
             let start = ContinuousClock.now
+            var lastPaste = start
+            var accepted = false
             while ContinuousClock.now - start < timeout {
                 try await Task.sleep(for: pollInterval)
                 let output = try await tmux.capturePane(sessionName: sessionName)
                 if PaneOutputParser.countImages(in: output) > countBefore {
+                    accepted = true
                     break
                 }
-                if ContinuousClock.now - start >= timeout {
-                    throw ImageSendError.imageUploadTimeout(expected: index + 1, assistant: assistant)
+                if ContinuousClock.now - lastPaste >= repasteInterval {
+                    KanbanCodeLog.info("image", "Image #\(index + 1) not shown yet in \(sessionName), pasting again")
+                    setClipboard(image.data)
+                    try await tmux.sendBracketedPaste(to: sessionName)
+                    lastPaste = ContinuousClock.now
                 }
+            }
+            if !accepted {
+                throw ImageSendError.imageUploadTimeout(expected: index + 1, assistant: assistant)
             }
         }
     }

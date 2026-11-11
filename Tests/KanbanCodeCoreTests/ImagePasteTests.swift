@@ -350,6 +350,88 @@ struct ImageSenderTests {
         ])
     }
 
+    @Test("pastes the image again when a cold Claude dropped the first paste")
+    func sendImageRepastesWhenDropped() async throws {
+        let mock = MockTmux()
+        // The first paste is ignored; the chip only shows after a later poll.
+        mock.capturedPaneOutputs = ["❯ ", "❯ ", "❯ ", "❯ ", "❯ ", "❯ ", "❯ [Image #1]"]
+
+        let sender = ImageSender(tmux: mock)
+        let image = ImageAttachment(data: Data([0x89, 0x50]))
+
+        try await sender.sendImages(
+            sessionName: "test-session",
+            images: [image],
+            setClipboard: { _ in },
+            pollInterval: .milliseconds(10),
+            timeout: .seconds(5),
+            repasteInterval: .milliseconds(25)
+        )
+
+        #expect(mock.sentBracketedPastes.count >= 2)
+    }
+
+    @Test("paste check pastes the marker again until it shows, then clears it")
+    func pasteCheckRetriesThenClears() async throws {
+        let mock = MockTmux()
+        let probe = "kanban-paste-check"
+        // Dropped twice, then shown, then gone after the clear.
+        mock.capturedPaneOutputs = ["❯ ", "❯ ", "❯ ", "❯ ", "❯ ", "❯ \(probe)", "❯ "]
+        let clears = Counter()
+
+        let sender = ImageSender(tmux: mock)
+        let seen = try await sender.waitForPasteReady(
+            sessionName: "s",
+            clearComposer: { await clears.bump() },
+            pollInterval: .milliseconds(10),
+            repasteInterval: .milliseconds(25),
+            timeout: .seconds(5)
+        )
+
+        #expect(seen)
+        #expect(mock.pastedTexts.count >= 2)
+        #expect(mock.pastedTexts.allSatisfy { $0.text == probe })
+        #expect(await clears.value == 1)
+    }
+
+    @Test("paste check gives up without throwing when the marker never shows")
+    func pasteCheckGivesUp() async throws {
+        let mock = MockTmux()
+        mock.capturedPaneOutputs = ["❯ "]
+        let sender = ImageSender(tmux: mock)
+        let seen = try await sender.waitForPasteReady(
+            sessionName: "s",
+            clearComposer: {},
+            pollInterval: .milliseconds(10),
+            repasteInterval: .milliseconds(20),
+            timeout: .milliseconds(60)
+        )
+        #expect(!seen)
+    }
+
+    actor Counter {
+        var value = 0
+        func bump() { value += 1 }
+    }
+
+    @Test("does not paste again once the image is shown")
+    func sendImageNoRepasteWhenAccepted() async throws {
+        let mock = MockTmux()
+        mock.capturedPaneOutputs = ["❯ ", "❯ [Image #1]"]
+
+        let sender = ImageSender(tmux: mock)
+        try await sender.sendImages(
+            sessionName: "test-session",
+            images: [ImageAttachment(data: Data([0x89]))],
+            setClipboard: { _ in },
+            pollInterval: .milliseconds(10),
+            timeout: .seconds(5),
+            repasteInterval: .seconds(3)
+        )
+
+        #expect(mock.sentBracketedPastes.count == 1)
+    }
+
     @Test("times out when image not confirmed")
     func sendImageTimeout() async throws {
         let mock = MockTmux()
