@@ -86,6 +86,9 @@ public final class TmuxAdapter: TmuxManagerPort, @unchecked Sendable {
         if !result.succeeded {
             throw TmuxError.createFailed(name: name, message: result.stderr)
         }
+        // The card's view has its own header; tmux's status line (on by
+        // default, bright green since tmux 3.8) only takes a row from it.
+        _ = try? await runTmux(["set-option", "-t", name, "status", "off"])
 
         if let command, !command.isEmpty {
             if command.contains("\n") {
