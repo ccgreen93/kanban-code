@@ -89,6 +89,34 @@ struct RemoteAttachScriptTests {
         #expect(TerminalCache.scrollCommands(session: "s", enter: false, delta: 0).isEmpty)
     }
 
+    @Test("a pane's mouse mode is read from tmux; only a fullscreen program with the mouse takes the wheel")
+    func paneMouseMode() {
+        let claude = TerminalCache.PaneMouseMode.parse("1 1 1 120 40\n")
+        #expect(claude == .init(alternateScreen: true, mouse: true, sgr: true, width: 120, height: 40))
+        #expect(claude?.wantsWheel == true)
+        // A shell: no alternate screen, scrolled through tmux copy-mode.
+        #expect(TerminalCache.PaneMouseMode.parse("0 0 0 80 24")?.wantsWheel == false)
+        // Fullscreen but no mouse asked for: copy-mode as before.
+        #expect(TerminalCache.PaneMouseMode.parse("1 0 0 80 24")?.wantsWheel == false)
+        #expect(TerminalCache.PaneMouseMode.parse("can't find pane") == nil)
+    }
+
+    @Test("wheel events are typed into the pane in the program's encoding, capped per flush")
+    func wheelCommand() {
+        let sgr = TerminalCache.PaneMouseMode(alternateScreen: true, mouse: true, sgr: true, width: 120, height: 40)
+        #expect(TerminalCache.wheelCommand(session: "s", delta: 2, mode: sgr)
+            == ["send-keys", "-t", "s", "-l", "\u{1b}[<64;60;20M\u{1b}[<64;60;20M"])
+        #expect(TerminalCache.wheelCommand(session: "s", delta: -1, mode: sgr)
+            == ["send-keys", "-t", "s", "-l", "\u{1b}[<65;60;20M"])
+        #expect(TerminalCache.wheelCommand(session: "s", delta: 0, mode: sgr) == nil)
+        var x10 = sgr
+        x10.sgr = false
+        #expect(TerminalCache.wheelCommand(session: "s", delta: 1, mode: x10)
+            == ["send-keys", "-t", "s", "-l", "\u{1b}[M`\\4"])
+        let flung = TerminalCache.wheelCommand(session: "s", delta: 5000, mode: sgr)
+        #expect(flung?.last?.components(separatedBy: "\u{1b}").count == 101)
+    }
+
     @Test("a trackpad's points become lines by row height, a mouse wheel's lines stay lines")
     func wheelLines() {
         #expect(TerminalCache.wheelLines(deltaY: 3, precise: false, lineHeight: 16) == 3)

@@ -664,7 +664,6 @@ final class TerminalCache {
     /// them (16 ms here, 60 ms for a machine, where each command is a round
     /// trip over the bridge) instead of one process per event.
     private var scrollPending: [String: Int] = [:]
-    private var scrollEnter: Set<String> = []
     private var scrollFlush: [String: Task<Void, Never>] = [:]
     /// The part of a line scrolled but not sent yet, so slow trackpad
     /// movement adds up instead of being rounded away or up.
@@ -784,31 +783,64 @@ final class TerminalCache {
             + Self.wheelLines(deltaY: deltaY, precise: precise, lineHeight: currentLineHeight)
         let lines = Int(total.rounded(.towardZero))
         scrollRemainder[session] = total - Double(lines)
-        if lines > 0 {
-            if !inCopyMode, !copyModeSessions.contains(session) {
-                copyModeSessions.insert(session)
-                terminals[session]?.passthroughMode = true
-                scrollEnter.insert(session)
-            }
-            scrollPending[session, default: 0] += lines
-        } else if lines < 0, inCopyMode || copyModeSessions.contains(session) {
-            scrollPending[session, default: 0] += lines
-        } else {
-            // Below a line, or down at the bottom: nothing to send. Down
-            // outside copy-mode keeps nothing back for later either.
-            if lines < 0 || (!inCopyMode && total < 0) { scrollRemainder[session] = 0 }
-            return
-        }
+        // Below a line: nothing to send yet. Whether the lines go to tmux
+        // copy-mode or to the program as wheel events is decided at the
+        // flush, which asks the pane whether its program wants the mouse.
+        guard lines != 0 else { return }
+        scrollPending[session, default: 0] += lines
         guard scrollFlush[session] == nil else { return }
         let delay: Duration = AppServices.tmux.isRemote(session) ? .milliseconds(60) : .milliseconds(16)
         scrollFlush[session] = Task { [weak self] in
             try? await Task.sleep(for: delay)
             guard let self else { return }
-            let enter = self.scrollEnter.remove(session) != nil
             let delta = self.scrollPending.removeValue(forKey: session) ?? 0
             self.scrollFlush[session] = nil
-            await self.flushScroll(session: session, enter: enter, delta: delta)
+            await self.flushScroll(session: session, delta: delta)
         }
+    }
+
+    /// What the program in a pane asked of the mouse, from tmux's format
+    /// `#{alternate_on} #{mouse_any_flag} #{mouse_sgr_flag} #{pane_width} #{pane_height}`.
+    struct PaneMouseMode: Equatable {
+        static let format = "#{alternate_on} #{mouse_any_flag} #{mouse_sgr_flag} #{pane_width} #{pane_height}"
+
+        var alternateScreen: Bool
+        var mouse: Bool
+        var sgr: Bool
+        var width: Int
+        var height: Int
+
+        /// A fullscreen program that asked for the mouse (Claude Code's
+        /// fullscreen view, less --mouse, vim) scrolls its own view. tmux
+        /// has no history of what it draws, so copy-mode would show nothing.
+        var wantsWheel: Bool { alternateScreen && mouse }
+
+        nonisolated static func parse(_ output: String) -> PaneMouseMode? {
+            let fields = output.split(whereSeparator: \.isWhitespace).map(String.init)
+            guard fields.count == 5, let width = Int(fields[3]), let height = Int(fields[4]) else { return nil }
+            return PaneMouseMode(
+                alternateScreen: fields[0] == "1", mouse: fields[1] == "1", sgr: fields[2] == "1",
+                width: width, height: height)
+        }
+    }
+
+    /// The tmux command that types `delta` wheel events (up when positive)
+    /// into a pane, in the encoding its program asked for, at the middle of
+    /// the pane. At most 100 per flush, so a flung trackpad cannot queue
+    /// thousands.
+    nonisolated static func wheelCommand(session: String, delta: Int, mode: PaneMouseMode) -> [String]? {
+        guard delta != 0 else { return nil }
+        let button = delta > 0 ? 64 : 65
+        let col = max(1, mode.width / 2), row = max(1, mode.height / 2)
+        let event: String
+        if mode.sgr {
+            event = "\u{1b}[<\(button);\(col);\(row)M"
+        } else {
+            // X10 encoding: each value offset by 32, coordinates up to 223.
+            let byte = { (v: Int) in String(UnicodeScalar(UInt8(min(v + 32, 255)))) }
+            event = "\u{1b}[M" + byte(button) + byte(min(col, 223)) + byte(min(row, 223))
+        }
+        return ["send-keys", "-t", session, "-l", String(repeating: event, count: min(abs(delta), 100))]
     }
 
     /// Lines one scroll event moves: a trackpad (precise deltas) reports
@@ -845,8 +877,29 @@ final class TerminalCache {
 
     /// Sends one flush to the tmux server that owns the session, this Mac's
     /// or a machine's.
-    private func flushScroll(session: String, enter: Bool, delta: Int) async {
-        guard let adapter = await Self.remoteAdapter(for: session) else { return }
+    private func flushScroll(session: String, delta: Int) async {
+        guard delta != 0, let adapter = await Self.remoteAdapter(for: session) else { return }
+        var enter = false
+        if !copyModeSessions.contains(session) {
+            let reply = try? await adapter.run(["display-message", "-p", "-t", session, PaneMouseMode.format])
+            if let mode = reply.flatMap({ $0.succeeded ? PaneMouseMode.parse($0.stdout) : nil }), mode.wantsWheel {
+                if let command = Self.wheelCommand(session: session, delta: delta, mode: mode) {
+                    _ = try? await adapter.run(command)
+                }
+                return
+            }
+            // Another flush may have entered copy-mode while this one asked.
+            if !copyModeSessions.contains(session) {
+                // Down at the bottom of an ordinary pane: nothing to scroll.
+                guard delta > 0 else {
+                    scrollRemainder[session] = 0
+                    return
+                }
+                copyModeSessions.insert(session)
+                terminals[session]?.passthroughMode = true
+                enter = true
+            }
+        }
         for command in Self.scrollCommands(session: session, enter: enter, delta: delta) {
             _ = try? await adapter.run(command)
         }
