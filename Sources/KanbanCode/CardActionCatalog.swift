@@ -50,6 +50,8 @@ struct CardActionEnvironment {
     var continueTargets: [(label: String, target: String)]
     /// Whether a machine is an ssh machine, shared and always on.
     var isSharedMachine: (String) -> Bool
+    /// Set or clear a card's priority.
+    var setPriority: (_ cardId: String, _ priority: CardPriority?) -> Void = { _, _ in }
 
     @MainActor
     static func live(for card: KanbanCodeCard) -> CardActionEnvironment {
@@ -71,7 +73,10 @@ struct CardActionEnvironment {
                 )
             },
             continueTargets: continueTargets(for: card, state: AppComposition.shared.store.state),
-            isSharedMachine: { AppServices.sshTargets[$0] != nil }
+            isSharedMachine: { AppServices.sshTargets[$0] != nil },
+            setPriority: { cardId, priority in
+                AppComposition.shared.store.dispatch(.setCardPriority(cardId: cardId, priority: priority))
+            }
         )
     }
 
@@ -260,6 +265,7 @@ struct CardActionCatalog {
                 shortcut: .togglePin, kind: .perform { actions.onSetPinned(!pinned) }
             ))
         }
+        items.append(priorityItem)
         items.append(compactSettingsItem)
         if actions.subagentCount > 0 {
             items.append(CardActionItem(
@@ -274,6 +280,28 @@ struct CardActionCatalog {
             ))
         }
         return items
+    }
+
+    private var priorityItem: CardActionItem {
+        let selected = card.link.priority
+        let cardId = card.id
+        var children: [CardActionItem] = CardPriority.allCases.sorted(by: >).map { level in
+            CardActionItem(
+                id: "priority.\(level.rawValue)", title: level.label,
+                isChecked: selected == level,
+                kind: .perform { environment.setPriority(cardId, level) }
+            )
+        }
+        children.append(CardActionItem(
+            id: "priority.none", title: "No Priority", paletteTitle: "None",
+            isChecked: selected == nil, dividerBefore: true,
+            kind: .perform { environment.setPriority(cardId, nil) }
+        ))
+        return CardActionItem(
+            id: "priority", title: selected.map { "Priority · \($0.label)" } ?? "Priority",
+            icon: selected == nil ? "flag" : "flag.fill", paletteTitle: "Priority",
+            kind: .submenu(children)
+        )
     }
 
     private var compactSettingsItem: CardActionItem {

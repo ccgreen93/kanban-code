@@ -257,6 +257,9 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
 
     public var isPinned: Bool { pinnedAt != nil }
 
+    /// How urgent the user marked this card; nil = no priority.
+    public var priority: CardPriority?
+
     /// Which coding assistant this card uses. nil defaults to .claude for backward compat.
     public var assistant: CodingAssistant?
 
@@ -483,6 +486,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         sortOrder: Int? = nil,
         pinnedAt: Date? = nil,
         pinnedSortOrder: Int? = nil,
+        priority: CardPriority? = nil,
         discoveredBranches: [String]? = nil,
         discoveredRepos: [String: String]? = nil,
         headless: Bool? = nil,
@@ -524,6 +528,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         self.sortOrder = sortOrder
         self.pinnedAt = pinnedAt
         self.pinnedSortOrder = pinnedSortOrder
+        self.priority = priority
         self.discoveredBranches = discoveredBranches
         self.discoveredRepos = discoveredRepos
         self.headless = headless
@@ -542,7 +547,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         case id, name, projectPath, column, createdAt, updatedAt, lastActivity, lastOpenedAt
         case manualOverrides, manuallyArchived, source, promptBody, promptImagePaths, parentCardId, modelOverride
         case selfCompactContextThresholdTokens
-        case isRemote, remote, isLaunching, launchedAt, sortOrder, pinnedAt, pinnedSortOrder
+        case isRemote, remote, isLaunching, launchedAt, sortOrder, pinnedAt, pinnedSortOrder, priority
         case discoveredBranches, discoveredRepos, assistant, apiServiceId, headless
         case ownerMachine, rev, ownerRev, fieldRevs, migrating, deletedAt
         // Typed links (new nested format)
@@ -579,6 +584,8 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         sortOrder = try c.decodeIfPresent(Int.self, forKey: .sortOrder)
         pinnedAt = try c.decodeIfPresent(Date.self, forKey: .pinnedAt)
         pinnedSortOrder = try c.decodeIfPresent(Int.self, forKey: .pinnedSortOrder)
+        // Lenient: a priority this build does not know reads as none.
+        priority = try? c.decodeIfPresent(CardPriority.self, forKey: .priority)
         discoveredBranches = try c.decodeIfPresent([String].self, forKey: .discoveredBranches)
         discoveredRepos = try c.decodeIfPresent([String: String].self, forKey: .discoveredRepos)
         assistant = try c.decodeIfPresent(CodingAssistant.self, forKey: .assistant)
@@ -687,6 +694,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         try c.encodeIfPresent(sortOrder, forKey: .sortOrder)
         try c.encodeIfPresent(pinnedAt, forKey: .pinnedAt)
         try c.encodeIfPresent(pinnedSortOrder, forKey: .pinnedSortOrder)
+        try c.encodeIfPresent(priority, forKey: .priority)
         try c.encodeIfPresent(discoveredBranches, forKey: .discoveredBranches)
         try c.encodeIfPresent(discoveredRepos, forKey: .discoveredRepos)
         try c.encodeIfPresent(assistant, forKey: .assistant)

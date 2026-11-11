@@ -34,7 +34,10 @@ struct CardView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Title
-            HStack(spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                if let priority = card.link.priority {
+                    PriorityIcon(priority: priority)
+                }
                 Text(card.displayTitle)
                     .font(.app(.body, weight: .medium))
                     .lineLimit(2)
@@ -111,6 +114,11 @@ struct CardView: View {
             isSelected ? Color.accentColor.opacity(0.12) : Color.primary.opacity(0.04),
             in: RoundedRectangle(cornerRadius: 8)
         )
+        .background {
+            if let tone = card.statusTone() {
+                CardStatusEdge(tone: tone)
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture { onSelect() }
         .contextMenu {
@@ -144,6 +152,79 @@ struct CardView: View {
                 enabledAssistants: enabledAssistants
             )
         }
+    }
+}
+
+// MARK: - Priority + Status
+
+extension CardPriority {
+    /// Urgent stands out; the rest stay neutral so they never read as a
+    /// session status colour.
+    var tint: Color {
+        self == .urgent ? .orange : .secondary
+    }
+}
+
+/// Linear-style priority marker: signal bars filled to the level, an
+/// exclamation square for urgent.
+struct PriorityIcon: View {
+    let priority: CardPriority
+
+    var body: some View {
+        Group {
+            if priority == .urgent {
+                Image(systemName: "exclamationmark.square.fill")
+            } else {
+                Image(systemName: "cellularbars", variableValue: Double(priority.rank - 1) / 3)
+            }
+        }
+        .font(.app(size: 10, weight: .semibold))
+        .foregroundStyle(priority.tint)
+        .help("Priority: \(priority.label)")
+        .accessibilityLabel("Priority \(priority.label)")
+    }
+}
+
+extension CardStatusTone {
+    var color: Color {
+        switch self {
+        case .blocked: .red
+        case .working: .yellow
+        case .done: .green
+        case .idle: .blue
+        }
+    }
+}
+
+/// A soft wash of the session status colour that bleeds in from the card's
+/// trailing edge, with a thin brighter line on the edge itself.
+struct CardStatusEdge: View {
+    let tone: CardStatusTone
+    @Environment(\.colorScheme) private var colorScheme
+
+    var body: some View {
+        let strength = colorScheme == .dark ? 1.0 : 0.8
+        let shape = RoundedRectangle(cornerRadius: 8)
+        shape
+            .fill(LinearGradient(
+                stops: [
+                    .init(color: tone.color.opacity(0), location: 0.45),
+                    .init(color: tone.color.opacity(0.10 * strength), location: 0.8),
+                    .init(color: tone.color.opacity(0.24 * strength), location: 1),
+                ],
+                startPoint: .leading, endPoint: .trailing
+            ))
+            .overlay(alignment: .trailing) {
+                LinearGradient(
+                    colors: [tone.color.opacity(0.15), tone.color.opacity(0.75 * strength), tone.color.opacity(0.15)],
+                    startPoint: .top, endPoint: .bottom
+                )
+                .frame(width: 2)
+            }
+            .clipShape(shape)
+            .animation(.easeInOut(duration: 0.35), value: tone)
+            .help(tone.label)
+            .accessibilityLabel(tone.label)
     }
 }
 

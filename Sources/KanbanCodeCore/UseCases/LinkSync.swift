@@ -52,6 +52,7 @@ public enum LinkSync {
         SharedField("sortOrder", \.sortOrder),
         SharedField("pinnedAt", \.pinnedAt),
         SharedField("pinnedSortOrder", \.pinnedSortOrder),
+        SharedField("priority", \.priority),
         SharedField("assistant", \.assistant),
         SharedField("deletedAt", \.deletedAt),
     ]

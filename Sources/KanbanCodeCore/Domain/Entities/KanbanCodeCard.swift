@@ -129,3 +129,39 @@ public struct KanbanCodeCard: Identifiable, Sendable, Equatable {
         return "\(days / 30)mo ago"
     }
 }
+
+/// The at-a-glance state of a card's session, drawn as the colour of the
+/// card's trailing edge. nil from `statusTone` means nothing to show.
+public enum CardStatusTone: String, Sendable, Equatable {
+    /// Stuck on the user: a permission prompt, a question, a failed start,
+    /// a usage limit.
+    case blocked
+    /// A turn, a start or a move in flight.
+    case working
+    /// The turn finished; the result waits for review.
+    case done
+    /// Open at its prompt with nothing asked of it yet.
+    case idle
+
+    public var label: String {
+        switch self {
+        case .blocked: "Blocked — needs you"
+        case .working: "Working"
+        case .done: "Done — ready for review"
+        case .idle: "Idle"
+        }
+    }
+}
+
+extension KanbanCodeCard {
+    public func statusTone(at now: Date = Date()) -> CardStatusTone? {
+        if sessionStatus.isFailure || activeUsageLimit(at: now) != nil { return .blocked }
+        if activityState == .blocked { return .blocked }
+        if showSpinner { return .working }
+        switch activityState {
+        case .needsAttention: return .done
+        case .idleWaiting: return hasRunningSession || owner != nil ? .idle : nil
+        default: return nil
+        }
+    }
+}

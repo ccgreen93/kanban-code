@@ -246,7 +246,7 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
                fileAge < 5 {
                 return .activelyWorking
             }
-            return .needsAttention
+            return Self.isBlockingNotification(lastEvent) ? .blocked : .needsAttention
         default:
             // Unknown hook events — use polled state, never promote to activelyWorking
             return polledStates[sessionId] ?? .idleWaiting
@@ -254,6 +254,18 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
     }
 
     /// Quick mtime check — returns seconds since file was last modified, or nil on error.
+    /// Whether a Notification hook means Claude is stuck on the user mid-turn
+    /// (a permission prompt, a question) rather than idling after a turn.
+    static func isBlockingNotification(_ event: HookEvent) -> Bool {
+        switch event.notificationType {
+        case "permission_prompt", "elicitation_dialog": return true
+        case "idle_prompt", "auth_success": return false
+        default:
+            let message = event.message?.lowercased() ?? ""
+            return message.contains("permission") || message.contains("approv")
+        }
+    }
+
     private static func fileAge(_ path: String) -> TimeInterval? {
         guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
               let mtime = attrs[.modificationDate] as? Date else { return nil }

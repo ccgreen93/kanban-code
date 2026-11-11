@@ -1329,6 +1329,8 @@ struct ChannelChatView: View {
         switch state {
         case .activelyWorking:
             return ActivityGlyph(name: "waveform", color: .orange, label: "working")
+        case .blocked:
+            return ActivityGlyph(name: "hand.raised.fill", color: .red, label: "blocked")
         case .needsAttention:
             return ActivityGlyph(name: "exclamationmark.circle.fill", color: .yellow, label: "needs attention")
         case .idleWaiting:

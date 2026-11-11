@@ -752,6 +752,7 @@ public enum Action: Sendable {
     case moveCard(cardId: String, to: KanbanCodeColumn)
     case renameCard(cardId: String, name: String)
     case setCardPinned(cardId: String, isPinned: Bool)
+    case setCardPriority(cardId: String, priority: CardPriority?)
     case setSelfCompactContextThreshold(cardId: String, thresholdTokens: Int?)
     case relinkSession(cardId: String, sessionLink: SessionLink)
     case sessionModelsScanned([String: String])
@@ -1361,6 +1362,13 @@ public enum Reducer {
                 link.pinnedAt = nil
                 link.pinnedSortOrder = nil
             }
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
+
+        case .setCardPriority(let cardId, let priority):
+            guard var link = state.links[cardId], link.priority != priority else { return [] }
+            link.priority = priority
             link.updatedAt = .now
             state.links[cardId] = link
             return [.upsertLink(link)]
@@ -3519,7 +3527,7 @@ public final class BoardStore: @unchecked Sendable {
 
     private func activitySummary(_ activityMap: [String: ActivityState]) -> String {
         let working = activityMap.values.filter { $0 == .activelyWorking }.count
-        let needsAttention = activityMap.values.filter { $0 == .needsAttention }.count
+        let needsAttention = activityMap.values.filter(\.awaitsUser).count
         let idle = activityMap.values.filter { $0 == .idleWaiting }.count
         let ended = activityMap.values.filter { $0 == .ended }.count
         return "\(activityMap.count) tracked, \(working) working, \(needsAttention) attention, \(idle) idle, \(ended) ended"

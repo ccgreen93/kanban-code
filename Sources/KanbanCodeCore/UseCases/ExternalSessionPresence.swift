@@ -18,7 +18,7 @@ public enum ExternalSessionPresence: Sendable, Equatable {
     public static func of(activity: ActivityState?) -> ExternalSessionPresence? {
         switch activity {
         case .activelyWorking: .working
-        case .idleWaiting, .needsAttention: .mayBeOpen
+        case .idleWaiting, .needsAttention, .blocked: .mayBeOpen
         case .ended, .stale, nil: nil
         }
     }
