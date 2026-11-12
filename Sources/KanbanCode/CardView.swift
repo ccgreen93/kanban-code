@@ -200,11 +200,12 @@ extension CardStatusTone {
 /// trailing edge, with a thin brighter line on the edge itself.
 struct CardStatusEdge: View {
     let tone: CardStatusTone
+    var cornerRadius: CGFloat = 8
     @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let strength = colorScheme == .dark ? 1.0 : 0.8
-        let shape = RoundedRectangle(cornerRadius: 8)
+        let shape = RoundedRectangle(cornerRadius: cornerRadius)
         shape
             .fill(LinearGradient(
                 stops: [

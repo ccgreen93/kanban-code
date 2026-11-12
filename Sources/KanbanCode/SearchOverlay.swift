@@ -862,9 +862,14 @@ struct SearchCardRow: View {
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 3) {
-                HighlightedText(text: card.displayTitle, terms: queryTerms)
-                    .font(.app(.body))
-                    .lineLimit(1)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    if let priority = card.link.priority {
+                        PriorityIcon(priority: priority)
+                    }
+                    HighlightedText(text: card.displayTitle, terms: queryTerms)
+                        .font(.app(.body))
+                        .lineLimit(1)
+                }
 
                 HStack(spacing: 6) {
                     AssistantIcon(assistant: card.link.effectiveAssistant)
@@ -901,6 +906,11 @@ struct SearchCardRow: View {
         .padding(.vertical, 6)
         .contentShape(Rectangle())
         .background(isHighlighted ? Color.accentColor.opacity(0.18) : Color.clear, in: RoundedRectangle(cornerRadius: 6))
+        .background {
+            if let tone = card.statusTone() {
+                CardStatusEdge(tone: tone, cornerRadius: 6)
+            }
+        }
         .overlay {
             if isHighlighted {
                 RoundedRectangle(cornerRadius: 6)

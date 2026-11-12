@@ -863,6 +863,9 @@ private struct ListCardRowView: View {
             VStack(alignment: .leading, spacing: 3) {
                 // Row 1: title + badge + time
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if let priority = card.link.priority {
+                        PriorityIcon(priority: priority)
+                    }
                     Text(card.displayTitle)
                         .font(.app(.subheadline))
                         .foregroundStyle(.primary)
@@ -928,6 +931,11 @@ private struct ListCardRowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isSelected ? Color.accentColor.opacity(0.12) : Color(.controlBackgroundColor).opacity(0.4))
         )
+        .background {
+            if let tone = card.statusTone() {
+                CardStatusEdge(tone: tone)
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: 8))
         .onTapGesture { onSelect() }
         .contextMenu {
