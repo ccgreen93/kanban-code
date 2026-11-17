@@ -63,6 +63,7 @@ enum AppShortcut: CaseIterable {
     // Detail panel
     case resumeAssistant        // Cmd+Enter (when selected assistant session ended)
     case toggleExpanded         // Cmd+Shift+Enter (only when palette closed)
+    case showTriage             // Cmd+Shift+U ("up next": jump to Triage from anywhere)
     case toggleSidebar          // Cmd+B (palette closed)
     case newTerminal            // Cmd+T (only when detail open on terminal tab, palette closed)
     case navigateBack           // Cmd+[ (only in expanded mode, palette closed)
@@ -91,7 +92,7 @@ enum AppShortcut: CaseIterable {
     static var allCases: [AppShortcut] {
         [.openPaletteK, .openCommandMode, .togglePin, .archiveCard, .renameCard,
          .newTask, .openSettings,
-         .resumeAssistant, .toggleExpanded, .toggleSidebar, .newTerminal, .navigateBack, .navigateForward, .deepSearch,
+         .resumeAssistant, .toggleExpanded, .showTriage, .toggleSidebar, .newTerminal, .navigateBack, .navigateForward, .deepSearch,
          .stopAssistant, .browserReload, .browserFocusAddress, .reopenClosedTab,
          .deselect, .deleteCard, .deleteCardForward,
          .project1, .project2, .project3, .project4, .project5,
@@ -109,6 +110,7 @@ enum AppShortcut: CaseIterable {
         case .openSettings: return ","
         case .resumeAssistant, .toggleExpanded, .deepSearch: return .return
         case .toggleSidebar: return "b"
+        case .showTriage: return "u"
         case .newTerminal: return "t"
         case .navigateBack: return "["
         case .navigateForward: return "]"
@@ -137,7 +139,7 @@ enum AppShortcut: CaseIterable {
         case .openCommandMode, .archiveCard: return [.command, .shift]
         case .newTask, .openSettings: return .command
         case .resumeAssistant, .deepSearch: return .command
-        case .toggleExpanded: return [.command, .shift]
+        case .toggleExpanded, .showTriage: return [.command, .shift]
         case .toggleSidebar: return .command
         case .newTerminal: return .command
         case .navigateBack, .navigateForward: return .command
@@ -176,6 +178,10 @@ enum AppShortcut: CaseIterable {
         // Palette open/close works everywhere
         case .openPaletteK, .openCommandMode,
              .newTask, .openSettings:
+            return true
+
+        // Jump to Triage from anywhere; the palette closes.
+        case .showTriage:
             return true
 
         // Pinning needs a card to pin, and the palette owns the keyboard while

@@ -111,6 +111,12 @@ struct ContentView: View {
     @State var renameChannelName: String? = nil
     @AppStorage("appearanceMode") var appearanceMode: AppearanceMode = .auto
     @AppStorage("boardViewMode") var boardViewModeRaw = BoardViewMode.kanban.rawValue
+    /// The board (kanban or triage) shown outside expanded mode, and what
+    /// leaving expanded mode returns to.
+    @AppStorage("boardViewMode.lastBoard") var lastBoardRaw = BoardViewMode.kanban.rawValue
+    /// Triage snoozes (`TriageSnoozeStorage`), restored at launch.
+    @AppStorage("triage.snoozes") var triageSnoozesRaw = ""
+    @State var triageKeys = TriageKeyRouter()
     @State var showProcessManager = false
     @AppStorage("killTmuxOnQuit") var killTmuxOnQuit = true
     @AppStorage("uiTextSize") var uiTextSize: Int = 1
@@ -177,8 +183,23 @@ struct ContentView: View {
     @State var shouldFocusTerminal = false
     @State var keyMonitor: Any?
 
-    private var boardViewMode: BoardViewMode {
-        BoardViewMode(rawValue: boardViewModeRaw) ?? .kanban
+    /// The board shown outside expanded mode.
+    private var lastBoard: BoardViewMode {
+        BoardViewMode.lastBoard(from: lastBoardRaw)
+    }
+
+    /// Leaves expanded mode for the last board.
+    private func showLastBoard() {
+        isExpandedDetail = false
+        boardViewModeRaw = lastBoard.rawValue
+    }
+
+    /// Shows Triage, from any mode (Cmd+Shift+U, the palette).
+    private func showTriage() {
+        if showSearch { closePalette() }
+        lastBoardRaw = BoardViewMode.triage.rawValue
+        boardViewModeRaw = BoardViewMode.triage.rawValue
+        if isExpandedDetail { isExpandedDetail = false }
     }
 
     private var viewModePicker: some View {
@@ -192,16 +213,18 @@ struct ContentView: View {
         .labelsHidden()
     }
 
-    /// Binding for the view mode picker — toggles between kanban and expanded+sidebar.
+    /// Binding for the view mode picker: List is expanded+sidebar, Kanban
+    /// and Triage are the boards shown outside it.
     private var viewModePickerBinding: Binding<BoardViewMode?> {
         Binding(
-            get: { isExpandedDetail ? .list : .kanban },
+            get: { isExpandedDetail ? .list : lastBoard },
             set: { newMode in
                 guard let newMode else { return }
                 if newMode == .list {
                     isExpandedDetail = true
                     showBoardInExpanded = true
                 } else {
+                    lastBoardRaw = newMode.rawValue
                     isExpandedDetail = false
                 }
                 boardViewModeRaw = newMode.rawValue
@@ -350,9 +373,31 @@ struct ContentView: View {
             },
             onColumnBackgroundClick: { column in
                 handleColumnBackgroundClick(column)
-            }
+            },
+            replacementContent: lastBoard == .triage ? AnyView(triageView) : nil
             )
         }
+    }
+
+    /// The Triage queue, shown beside the Agents & Channels rail in place
+    /// of the columns; cards open in the same inspector.
+    private var triageView: some View {
+        TriageView(
+            store: store,
+            keys: triageKeys,
+            onOpen: { cardId in
+                store.dispatch(.selectCard(cardId: cardId))
+            },
+            onOpenExpanded: { cardId in
+                store.dispatch(.selectCard(cardId: cardId))
+                isExpandedDetail = true
+                boardViewModeRaw = BoardViewMode.list.rawValue
+            },
+            onArchive: { cardId in
+                guard store.state.links[cardId] != nil else { return }
+                presentArchiveDialog(cardId: cardId)
+            }
+        )
     }
 
     /// List view for sidebar — no top padding, marked as sidebar context.
@@ -797,7 +842,9 @@ struct ContentView: View {
                     detailTab = DetailTab.initialTab(for: card)
                     // Auto-focus terminal on any card switch (not just click).
                     // Covers Cmd+K, arrow nav, notification taps, url deep-links.
-                    if card.link.tmuxLink != nil {
+                    // Not from Triage: its keys need the keyboard to stay.
+                    let fromTriage = !isExpandedDetail && lastBoard == .triage
+                    if card.link.tmuxLink != nil && !fromTriage {
                         shouldFocusTerminal = true
                     }
                 }
@@ -810,7 +857,7 @@ struct ContentView: View {
                 if !store.state.detailExpanded {
                     showBoardInExpanded = false
                     sidebarVisibility = .detailOnly
-                    boardViewModeRaw = BoardViewMode.kanban.rawValue
+                    boardViewModeRaw = lastBoard.rawValue
                 }
                 detailExpandedPersisted = store.state.detailExpanded
             }
@@ -1440,6 +1487,9 @@ struct ContentView: View {
     private var boardWithPresence: some View {
         boardWithAlerts
             .onChange(of: detailTab, initial: true) { reportPresenceTab() }
+            .onChange(of: store.state.triageSnoozes) {
+                triageSnoozesRaw = TriageSnoozeStorage.encode(store.state.triageSnoozes)
+            }
     }
 
     private var boardWithHandlers: some View {
@@ -1452,6 +1502,8 @@ struct ContentView: View {
                 }
                 applyAppearance()
                 try? RemoteShellManager.deploy()
+                // Triage snoozes live in app storage, not links.json.
+                store.dispatch(.restoreTriageSnoozes(TriageSnoozeStorage.decode(triageSnoozesRaw)))
                 // Restore persisted project selection
                 if !selectedProjectPersisted.isEmpty {
                     let settings = try? await settingsStore.read()
@@ -2224,8 +2276,7 @@ struct ContentView: View {
         Button("") {
             if AppShortcut.toggleExpanded.isActive(in: shortcutContext) {
                 if isExpandedDetail {
-                    isExpandedDetail = false
-                    boardViewModeRaw = BoardViewMode.kanban.rawValue
+                    showLastBoard()
                 } else {
                     isExpandedDetail = true
                     boardViewModeRaw = BoardViewMode.list.rawValue
@@ -2233,6 +2284,13 @@ struct ContentView: View {
             }
         }
         .keyboardShortcut(AppShortcut.toggleExpanded.key, modifiers: AppShortcut.toggleExpanded.modifiers)
+        .hidden()
+
+        // Cmd+Shift+U — jump to Triage from anywhere.
+        Button("") {
+            if AppShortcut.showTriage.isActive(in: shortcutContext) { showTriage() }
+        }
+        .keyboardShortcut(AppShortcut.showTriage.key, modifiers: AppShortcut.showTriage.modifiers)
         .hidden()
 
         // Cmd+B — toggle the left panel (session list / Agents & Channels rail)
@@ -2359,15 +2417,17 @@ struct ContentView: View {
             CommandItem("Open Settings", icon: "gear", shortcut: AppShortcut.openSettings.displayString) {
                 NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
             },
-            CommandItem("Toggle View Mode", icon: isExpandedDetail ? "square.split.2x1" : "list.bullet", shortcut: AppShortcut.toggleExpanded.displayString) { [self] in
+            CommandItem("Toggle View Mode", icon: isExpandedDetail ? lastBoard.icon : "list.bullet", shortcut: AppShortcut.toggleExpanded.displayString) { [self] in
                 if isExpandedDetail {
-                    isExpandedDetail = false
-                    boardViewModeRaw = BoardViewMode.kanban.rawValue
+                    showLastBoard()
                 } else {
                     isExpandedDetail = true
                     showBoardInExpanded = true
                     boardViewModeRaw = BoardViewMode.list.rawValue
                 }
+            },
+            CommandItem("Show Triage", icon: BoardViewMode.triage.icon, shortcut: AppShortcut.showTriage.displayString) { [self] in
+                showTriage()
             },
             CommandItem("New Task", icon: "plus", shortcut: AppShortcut.newTask.displayString) { [self] in
                 presentNewTask()
@@ -2629,6 +2689,18 @@ struct ContentView: View {
                     || responder is NSTableView {
                     return event
                 }
+            }
+
+            // Triage takes its single-letter keys and arrows while it shows,
+            // only in the window that hosts it, and not while the palette,
+            // a sheet or a dialog has the keyboard.
+            var dialogOpen = true
+            if case .none = activeDialog { dialogOpen = false }
+            if !isExpandedDetail, lastBoard == .triage, !showSearch, !dialogOpen,
+               let window = event.window, window === triageKeys.window,
+               window.attachedSheet == nil,
+               let handler = triageKeys.handler, handler(event) {
+                return nil
             }
 
             switch event.specialKey {

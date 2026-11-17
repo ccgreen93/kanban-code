@@ -14,6 +14,19 @@ struct ToolbarVisibilityTests {
         #expect(v.showExpandedCardInfo == false)
     }
 
+    @Test("Triage mode: it is not expanded, so board controls and the picker show")
+    func triageMode() {
+        // Triage renders in the non-expanded branch, like kanban.
+        #expect(BoardViewMode.triage.isBoard)
+        for hasCard in [true, false] {
+            let v = ToolbarVisibility(isExpandedDetail: false, showBoardInExpanded: false, hasSelectedCard: hasCard)
+            #expect(v.showBoardControls == true)
+            #expect(v.showViewModePicker == true)
+            #expect(v.showInspectorToggle == true)
+            #expect(v.showExpandedCardInfo == false)
+        }
+    }
+
     @Test("Normal mode without card: no expanded card info")
     func normalModeNoCard() {
         let v = ToolbarVisibility(isExpandedDetail: false, showBoardInExpanded: false, hasSelectedCard: false)

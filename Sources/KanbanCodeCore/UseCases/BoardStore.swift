@@ -110,6 +110,12 @@ public final class AppState: @unchecked Sendable {
     public var links: [String: Link] = [:] { didSet { cardInputsVersion &+= 1 } }  // cardId → Link
     public var sessions: [String: Session] = [:] { didSet { cardInputsVersion &+= 1 } }  // sessionId → Session
     public var activityMap: [String: ActivityState] = [:] { didSet { cardInputsVersion &+= 1 } }  // sessionId → activity
+    /// sessionId → when its activity state last changed, as seen by this
+    /// run (not persisted). The triage queue measures waits from it.
+    public var activitySince: [String: Date] = [:]
+    /// cardId → snooze hiding the card from the triage queue. Persisted by
+    /// the app, never in links.json.
+    public var triageSnoozes: [String: TriageSnooze] = [:]
     /// sessionId → model the session is running now, e.g. "opus". Polled from
     /// Claude's statusline rather than derived from the card, so an in-session
     /// `/model` switch shows up.
@@ -492,6 +498,16 @@ public final class AppState: @unchecked Sendable {
         if localProjectSlugs[path] != nil { return nil }
         guard let slug = peerRepoSlugs[path]?.lowercased() else { return nil }
         return localProjectSlugs.first { $0.value.lowercased() == slug }?.key
+    }
+
+    /// Drops the triage snoozes that expired: timed out, the card's
+    /// activity changed, a request opened since, or the card is gone.
+    func pruneTriageSnoozes(now: Date) {
+        guard !triageSnoozes.isEmpty else { return }
+        let pruned = TriageSnooze.pruned(
+            triageSnoozes, cards: cards, openRequests: openAttentionRequests,
+            dropMissing: !links.isEmpty, now: now)
+        if pruned != triageSnoozes { triageSnoozes = pruned }
     }
 
     func rebuildCards() {
@@ -954,6 +970,13 @@ public enum Action: Sendable {
     case attentionNoteAwaited(id: String, until: Date)
     /// Resolved requests older than `before` are dropped.
     case attentionPruned(before: Date)
+
+    // Triage
+    /// Hides a card from the triage queue.
+    case snoozeTriage(cardId: String, snooze: TriageSnooze)
+    case unsnoozeTriage(cardId: String)
+    /// The snoozes saved by the app, loaded at launch.
+    case restoreTriageSnoozes([String: TriageSnooze])
     case deleteChannel(name: String)
     case renameChannel(old: String, new: String)
     /// Kick a member out of a channel (e.g. a dead agent whose card no longer
@@ -1196,12 +1219,14 @@ public enum Reducer {
         if case .peerLinksMerged = action {
             let effects = reduceAction(state: state, action: action)
             state.rebuildCards()
+            state.pruneTriageSnoozes(now: Date())
             return effects
         }
         let before = state.links
         let effects = reduceAction(state: state, action: action)
         let stamped = stampLocalChanges(state: state, before: before, action: action, effects: effects)
         state.rebuildCards()
+        state.pruneTriageSnoozes(now: Date())
         return stamped
     }
 
@@ -1793,6 +1818,10 @@ public enum Reducer {
             }
             let isNew = state.attentionRequests[request.id] == nil
             state.attentionRequests[request.id] = request
+            // A new request always breaks a snooze on its card.
+            if isNew, request.isOpen, let cardId = request.cardId, state.triageSnoozes[cardId] != nil {
+                state.triageSnoozes.removeValue(forKey: cardId)
+            }
             return isNew ? [.deliverAttention(request)] : [.updateAttention(request)]
 
         case .attentionResolved(let id, let resolution, let by, let note, let noteUntil):
@@ -1822,6 +1851,25 @@ public enum Reducer {
             state.attentionRequests = state.attentionRequests.filter { _, request in
                 guard let resolvedAt = request.resolvedAt else { return true }
                 return resolvedAt >= before
+            }
+            return []
+
+        // MARK: Triage
+
+        case .snoozeTriage(let cardId, let snooze):
+            state.triageSnoozes[cardId] = snooze
+            return []
+
+        case .unsnoozeTriage(let cardId):
+            if state.triageSnoozes[cardId] != nil { state.triageSnoozes.removeValue(forKey: cardId) }
+            return []
+
+        case .restoreTriageSnoozes(let snoozes):
+            let now = Date()
+            // Keep what was snoozed here since launch; drop the timed out.
+            let merged = snoozes.merging(state.triageSnoozes) { _, current in current }
+            state.triageSnoozes = merged.filter { _, snooze in
+                snooze.until.map { now < $0 } ?? snooze.untilActivityChange
             }
             return []
 
@@ -2710,6 +2758,8 @@ public enum Reducer {
                 state.sessions = newSessions
             }
             if state.activityMap != result.activityMap {
+                state.activitySince = TriageQueue.updatedActivitySince(
+                    state.activitySince, old: state.activityMap, new: result.activityMap, now: Date())
                 state.activityMap = result.activityMap
             }
 
@@ -2993,7 +3043,11 @@ public enum Reducer {
                     changed = true
                 }
             }
-            if state.activityMap != activityMap { state.activityMap = activityMap }
+            if state.activityMap != activityMap {
+                state.activitySince = TriageQueue.updatedActivitySince(
+                    state.activitySince, old: state.activityMap, new: activityMap, now: Date())
+                state.activityMap = activityMap
+            }
             return changed ? [.persistLinks(Array(state.links.values))] : []
 
         // MARK: Busy State

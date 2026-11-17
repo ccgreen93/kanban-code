@@ -48,9 +48,44 @@ struct BoardView: View {
     var onNewTask: () -> Void = {}
     var onCardClicked: (String) -> Void = { _ in }
     var onColumnBackgroundClick: (KanbanCodeColumn) -> Void = { _ in }
+    /// Shown beside the Agents & Channels rail in place of the columns
+    /// (the Triage view).
+    var replacementContent: AnyView?
 
     var body: some View {
-        boardContent
+        Group {
+            if let replacementContent {
+                HStack(alignment: .top, spacing: 6) {
+                    if !railHidden {
+                        channelsPseudoColumn
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
+                    replacementContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 52)
+                .padding(.bottom, 16)
+            } else {
+                boardContent
+            }
+        }
+        .sheet(isPresented: Binding(
+            get: { renamingPinnedCardId != nil },
+            set: { if !$0 { renamingPinnedCardId = nil } }
+        )) {
+            if let cardId = renamingPinnedCardId,
+               let card = store.state.filteredCards.first(where: { $0.id == cardId }) {
+                RenameSessionDialog(
+                    currentName: card.link.name ?? card.displayTitle,
+                    isPresented: Binding(
+                        get: { renamingPinnedCardId != nil },
+                        set: { if !$0 { renamingPinnedCardId = nil } }
+                    ),
+                    onRename: { name in store.dispatch(.renameCard(cardId: cardId, name: name)) }
+                )
+            }
+        }
     }
 
     private var activeSubagentsByParent: [String: [KanbanCodeCard]] {
@@ -354,22 +389,6 @@ struct BoardView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                 }
-            }
-        }
-        .sheet(isPresented: Binding(
-            get: { renamingPinnedCardId != nil },
-            set: { if !$0 { renamingPinnedCardId = nil } }
-        )) {
-            if let cardId = renamingPinnedCardId,
-               let card = store.state.filteredCards.first(where: { $0.id == cardId }) {
-                RenameSessionDialog(
-                    currentName: card.link.name ?? card.displayTitle,
-                    isPresented: Binding(
-                        get: { renamingPinnedCardId != nil },
-                        set: { if !$0 { renamingPinnedCardId = nil } }
-                    ),
-                    onRename: { name in store.dispatch(.renameCard(cardId: cardId, name: name)) }
-                )
             }
         }
     }
