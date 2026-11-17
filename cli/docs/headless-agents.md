@@ -71,7 +71,8 @@ warning if it asked for rush.
 
 | Command | What it does |
 |---|---|
-| `kanban launch <slug> --cwd <dir> [--host tmux\|rush]` | Launch or resume one agent session (idempotent) |
+| `kanban launch <slug> --cwd <dir> [--host tmux\|rush] [--board]` | Launch or resume one agent session (idempotent). A new card lands in the Agents section beside the board; `--board` puts it in a lane instead |
+| `kanban agent add\|remove <card>` | Move any card into the Agents section, or back onto the board |
 | `kanban reconcile [--prune]` | Ensure every configured agent's worktree + session + card; `--prune` tears down de-configured agents |
 | `kanban daemon [--poll-interval ms] [--no-self-compact]` | Always-on engine: auto-send queued prompts on Stop, auto-compact long sessions |
 | `kanban hooks install` | Install Claude hooks + statusline into `~/.claude/settings.json` |

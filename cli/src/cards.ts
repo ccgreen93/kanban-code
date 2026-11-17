@@ -103,6 +103,35 @@ export function queueCardPrompt(cardId: string, body: string): boolean {
   return true;
 }
 
+/// Move a card into the Agents section or back onto the board, the way the
+/// app's setCardAgent reducer does. Only safe while Kanban Code is not
+/// running, for the same reason as queueCardPrompt. Returns the card as
+/// written, or undefined when there is no such card.
+export function setCardAgentOnDisk(cardId: string, isAgent: boolean): Link | undefined {
+  const card = readLinks().find((candidate) => candidate.id === cardId);
+  if (!card) return undefined;
+  if (!!card.agentAt === isAgent) return card;
+  const next: Link = { ...card, updatedAt: isoNow() };
+  if (isAgent) {
+    next.agentAt = isoNow();
+    if (next.headless) next.headless = false;
+    // An agent is not also a pin: one card in two rail sections reads as a duplicate.
+    delete next.pinnedAt;
+    delete next.pinnedSortOrder;
+    if (next.manuallyArchived) {
+      next.manuallyArchived = false;
+      if (next.column === "all_sessions") {
+        next.column = "backlog";
+        next.manualOverrides = { ...next.manualOverrides, column: true };
+      }
+    }
+  } else {
+    delete next.agentAt;
+  }
+  upsertCard(next);
+  return next;
+}
+
 /// Find the existing card for an agent slug (matched by name), if any.
 export function findCardByName(name: string): Link | undefined {
   return readLinks().find((l) => l.name === name);

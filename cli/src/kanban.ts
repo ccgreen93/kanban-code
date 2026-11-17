@@ -36,7 +36,8 @@ import {
 } from "./format.js";
 import { agentIdentity } from "./agents/identity.js";
 import { runVaultAlias } from "./vault-alias.js";
-import { ensureAgentSession } from "./agents/launch.js";
+import { ensureAgentSession, type LaunchResult } from "./agents/launch.js";
+import { setCardAgent } from "./agents/agent-flag.js";
 import { loadAgentsConfig, isAgentHost } from "./agents/config.js";
 import { reconcileAll } from "./agents/reconcile.js";
 import { runtimeSpec } from "./agents/runtime.js";
@@ -607,8 +608,9 @@ program
   .option("--no-skip-permissions", "Do NOT pass --dangerously-skip-permissions")
   .option("--no-resume", "Always start a fresh session, never resume a prior one under this slug (for ephemeral agents)")
   .option("--host <host>", "Where the session runs: tmux, or rush (a rush host that moves between signed-in Claude accounts)", "tmux")
+  .option("--board", "Put a newly created card on the board instead of the Agents section")
   .option("-j, --json", "Output as JSON")
-  .action((slug: string, opts) => {
+  .action(async (slug: string, opts) => {
     try {
       const cwd = resolve(opts.cwd);
       if (!existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`);
@@ -619,7 +621,9 @@ program
         model: opts.model,
         skipPermissions: opts.skipPermissions,
         forceFresh: opts.resume === false,
+        onBoard: !!opts.board,
       });
+      if (!opts.board) await placeLaunchedAgentCard(result);
       if (opts.json) {
         output(result, opts);
       } else {
@@ -638,6 +642,63 @@ program
       process.exit(1);
     }
   });
+
+/**
+ * A card `kanban launch` creates is written to links.json already in the
+ * Agents section, which is all it takes while the app is closed. A running
+ * app replaces that card with its own for the session, so the flag goes
+ * through the app's mailbox as well. An existing card stays where the user
+ * put it. A failure here never fails the launch: the session is already up.
+ */
+async function placeLaunchedAgentCard(result: LaunchResult): Promise<void> {
+  if (!result.createdCard || !kanbanCodeIsRunning()) return;
+  try {
+    await setCardAgent(
+      { cardId: result.card.id, sessionId: result.sessionId, tmuxName: result.tmuxName },
+      true
+    );
+  } catch (error) {
+    process.stderr.write(
+      `Warning: could not move ${result.identity.slug} to Agents: ${(error as Error).message}. ` +
+      `Run \`kanban agent add ${result.identity.slug}\` once the app shows its card.\n`
+    );
+  }
+}
+
+// ── kanban agent add|remove <card> ───────────────────────────────────
+
+const agentCmd = program
+  .command("agent")
+  .description("Move a card into the Agents section beside the board (long-running sessions), or back onto the board");
+
+for (const [name, isAgent, description] of [
+  ["add", true, "Move a card into the Agents section"],
+  ["remove", false, "Move an agent card back onto the board"],
+] as const) {
+  agentCmd
+    .command(name)
+    .description(description)
+    .argument("<card>", "Card ID, ID prefix, or name search")
+    .option("-j, --json", "Output as JSON")
+    .action(async (query: string, opts) => {
+      try {
+        const card = findCard(readLinks(), query);
+        if (!card) throw new Error(`Card not found: ${query}`);
+        if (card.parentCardId) {
+          throw new Error(`Card ${card.id} is a subagent; only top-level cards can live in Agents`);
+        }
+        const cardId = await setCardAgent(
+          { cardId: card.id, sessionId: card.sessionLink?.sessionId, tmuxName: card.tmuxLink?.sessionName },
+          isAgent
+        );
+        if (opts.json) output({ cardId, isAgent }, { json: true });
+        else console.log(`${card.name ?? cardId} ${isAgent ? "moved to Agents" : "moved to the board"}`);
+      } catch (error) {
+        console.error(String(error instanceof Error ? error.message : error));
+        process.exit(1);
+      }
+    });
+}
 
 // ── kanban reconcile ─────────────────────────────────────────────────
 

@@ -36,7 +36,8 @@ export type SubagentOperation =
   | "enqueuePrompt"
   | "relinkSession"
   | "setModel"
-  | "setContextThreshold";
+  | "setContextThreshold"
+  | "setAgent";
 
 export interface SubagentCommandRequest {
   id: string;
@@ -61,6 +62,8 @@ export interface SubagentCommandRequest {
    * a full checkout, and most children work on the same branch as the parent.
    */
   worktreeName?: string;
+  /** For `setAgent`: false puts the card back on the board. Omitted means true. */
+  isAgent?: boolean;
 }
 
 export interface SubagentCommandResponse {

@@ -141,6 +141,11 @@ export interface Link {
   isRemote: boolean;
   remote?: RemoteLink;
   sortOrder?: number;
+  pinnedAt?: string;
+  pinnedSortOrder?: number;
+  /** Set when the card is a long-running agent shown in the Agents section. */
+  agentAt?: string;
+  headless?: boolean;
   assistant?: CodingAssistant;
   isLaunching?: boolean;
   /** Machine id of the master that runs this card. Missing means this machine. */
@@ -209,6 +214,8 @@ export interface CardSummary {
   peek?: string;
   queuedPrompts: number;
   isRemote: boolean;
+  /** A long-running agent shown in the Agents section beside the board. */
+  isAgent?: boolean;
   tokens?: {
     input: number;
     output: number;

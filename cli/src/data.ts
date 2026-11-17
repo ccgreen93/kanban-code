@@ -863,6 +863,7 @@ export function toCardSummary(
     lastMessage: undefined, // filled lazily
     queuedPrompts: link.queuedPrompts?.length || 0,
     isRemote: link.isRemote,
+    ...(link.agentAt ? { isAgent: true } : {}),
     tokens: ctx
       ? {
           input: ctx.totalInputTokens,

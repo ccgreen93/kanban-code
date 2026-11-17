@@ -16,6 +16,11 @@ public enum SubagentCommandOperation: String, Codable, Sendable {
     /// Retune a card's compaction schedule when the work turns out bigger or
     /// smaller than the goal it was spawned with.
     case setContextThreshold
+    /// Move a card into the Agents section (or back onto the board). The
+    /// card is found by id, or by the session or tmux name `kanban launch`
+    /// gave it, since a card the CLI wrote under a running app is replaced
+    /// by the one the app discovers for the same session.
+    case setAgent
 }
 
 /// Resolves the worktree a spawn asked for.
@@ -70,6 +75,8 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
     /// costs a full checkout and most children are working on the same branch
     /// as the parent anyway.
     public let worktreeName: String?
+    /// For `setAgent`: false puts the card back on the board. Absent means true.
+    public let isAgent: Bool?
 
     public init(
         id: String,
@@ -85,7 +92,8 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         contextThresholdTokens: Int? = nil,
         sessionId: String? = nil,
         sessionPath: String? = nil,
-        worktreeName: String? = nil
+        worktreeName: String? = nil,
+        isAgent: Bool? = nil
     ) {
         self.id = id
         self.operation = operation
@@ -101,6 +109,7 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         self.sessionId = sessionId
         self.sessionPath = sessionPath
         self.worktreeName = worktreeName
+        self.isAgent = isAgent
     }
 }
 

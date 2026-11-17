@@ -71,6 +71,9 @@ extension MasterEngine {
         if request.operation == .relinkSession {
             return try await relinkCardSession(request)
         }
+        if request.operation == .setAgent {
+            return try await setCardAgent(request)
+        }
         guard let parent = await waitForCard(request.parentCardId) else {
             throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
         }
@@ -100,6 +103,8 @@ extension MasterEngine {
             return try await enqueueCardPrompt(request)
         case .relinkSession:
             return try await relinkCardSession(request)
+        case .setAgent:
+            return try await setCardAgent(request)
         case .setContextThreshold:
             let child = try ownedSubagent(from: parent.id, targetId: request.cardId)
             // The child's own assistant decides this, not whatever the parent runs.
@@ -246,6 +251,47 @@ extension MasterEngine {
         ))
         await waitForPersistedLink(cardId: card.id, reaching: "session \(sessionId.prefix(8))") {
             $0.sessionLink?.sessionId == sessionId
+        }
+        return card.id
+    }
+
+    /// `kanban launch` and `kanban agent add|remove`. A card the CLI writes
+    /// under a running app never reaches the board: the app discovers the
+    /// session and makes its own card for it. So the card is looked for by
+    /// id first, then by the session and tmux name the launch gave it, and
+    /// given a while to turn up, since discovery runs on the reconcile loop.
+    private func setCardAgent(_ request: SubagentCommandRequest) async throws -> String {
+        let isAgent = request.isAgent ?? true
+        let targetId = request.cardId ?? request.parentCardId
+        let sessionId = request.sessionId?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tmuxName = request.name?.trimmingCharacters(in: .whitespacesAndNewlines)
+        func find() -> Link? {
+            let links = store.state.links
+            if let link = links[targetId] { return link }
+            let live = links.values.filter { $0.deletedAt == nil && !$0.manuallyArchived }
+            if let sessionId, !sessionId.isEmpty,
+               let link = live.first(where: { $0.sessionLink?.sessionId == sessionId }) {
+                return link
+            }
+            if let tmuxName, !tmuxName.isEmpty,
+               let link = live.first(where: { $0.tmuxLink?.sessionName == tmuxName }) {
+                return link
+            }
+            return nil
+        }
+        var card = find()
+        for _ in 0..<300 where card == nil {
+            try? await Task.sleep(for: .milliseconds(200))
+            card = find()
+        }
+        guard let card else { throw SubagentCommandExecutionError.cardNotFound(targetId) }
+        guard card.parentCardId == nil else {
+            throw SubagentCommandExecutionError.subagentCannotBeAgent(card.id)
+        }
+        if card.isAgent == isAgent { return card.id }
+        store.dispatch(.setCardAgent(cardId: card.id, isAgent: isAgent))
+        await waitForPersistedLink(cardId: card.id, reaching: isAgent ? "agent" : "board") {
+            $0.isAgent == isAgent
         }
         return card.id
     }
@@ -599,6 +645,7 @@ private enum SubagentCommandExecutionError: LocalizedError {
     case invalidContextThreshold(Int)
     case unsupportedContextThresholdAssistant(CodingAssistant)
     case expiredRequest
+    case subagentCannotBeAgent(String)
 
     var errorDescription: String? {
         switch self {
@@ -624,6 +671,8 @@ private enum SubagentCommandExecutionError: LocalizedError {
             "Invalid context threshold \(threshold). Use a positive token count such as 250k or 250000."
         case .unsupportedContextThresholdAssistant(let assistant):
             "Per-card context thresholds are currently available for Claude subagents only, not \(assistant.displayName)."
+        case .subagentCannotBeAgent(let id):
+            "Card \(id) is a subagent; only top-level cards can live in Agents"
         case .expiredRequest:
             "This subagent command expired before Kanban Code could process it. Inspect existing child cards before retrying."
         }

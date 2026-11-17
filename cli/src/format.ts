@@ -64,6 +64,7 @@ export function formatCardSummary(card: CardSummary): string {
 
   // Metadata line
   const meta: string[] = [];
+  if (card.isAgent) meta.push("agent");
   if (card.subagentDepth !== undefined) meta.push(`depth:${card.subagentDepth}`);
   if (card.assistant) meta.push(card.assistant);
   if (card.modelOverride) meta.push(`model:${card.modelOverride}`);

@@ -123,4 +123,42 @@ describe("headless agent launch/resume (real tmux)", skipIfNoTmux, () => {
     execSync(`tmux has-session -t ${identity.tmuxName}`);
     assert.equal(readLinks()[0].sessionLink?.sessionId, result.sessionId);
   });
+
+  test("a new card lands in the Agents section", () => {
+    const result = ensureAgentSession(identity, { cwd: workspace, bin: "true" });
+    assert.equal(result.createdCard, true);
+    assert.ok(readLinks()[0].agentAt, "a launched agent's new card is an agent");
+  });
+
+  test("onBoard puts a new card on the board", () => {
+    const result = ensureAgentSession(identity, { cwd: workspace, bin: "true", onBoard: true });
+    assert.equal(result.createdCard, true);
+    assert.equal(readLinks()[0].agentAt, undefined);
+  });
+
+  test("an existing card keeps where the user put it, and the fields launch does not manage", () => {
+    ensureAgentSession(identity, { cwd: workspace, bin: "true" });
+    // The user moved it to the board and pinned it; then its session died.
+    const [card] = readLinks();
+    delete card.agentAt;
+    card.pinnedAt = "2026-11-01T00:00:00Z";
+    (card as typeof card & { fieldRevs?: unknown }).fieldRevs = { name: { counter: 3, machine: "m" } };
+    writeFileSync(join(home, "links.json"), JSON.stringify({ links: [card] }));
+    execSync(`tmux kill-session -t ${identity.tmuxName}`);
+
+    const other = mkdtempSync(join(tmpdir(), "kanban-launch-ws2-"));
+    try {
+      const result = ensureAgentSession(identity, { cwd: other, bin: "true" });
+      assert.equal(result.createdCard, false);
+      const [after] = readLinks();
+      assert.equal(after.worktreeLink?.path, other, "the rewrite happened");
+      assert.equal(after.agentAt, undefined, "a relaunch does not move it back to Agents");
+      assert.equal(after.pinnedAt, "2026-11-01T00:00:00Z");
+      assert.deepEqual((after as typeof after & { fieldRevs?: unknown }).fieldRevs, {
+        name: { counter: 3, machine: "m" },
+      });
+    } finally {
+      rmSync(other, { recursive: true, force: true });
+    }
+  });
 });

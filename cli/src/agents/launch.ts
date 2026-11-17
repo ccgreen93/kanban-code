@@ -49,6 +49,9 @@ export interface LaunchOptions {
   /// How long a runtime that is named after launch gets to come up before the
   /// name is given up on. A loaded box draws its first frame slowly.
   nameTimeoutMs?: number;
+  /// A card this launch creates goes on the board instead of the Agents
+  /// section beside it.
+  onBoard?: boolean;
 }
 
 export type LaunchAction = "noop-running" | "launched" | "resumed";
@@ -64,6 +67,10 @@ export interface LaunchResult {
   /// by a launch flag, for a session already running, and for one that never
   /// came up in time.
   named: boolean;
+  /// Whether this launch made the agent's card rather than finding one. A
+  /// new card starts in the Agents section; an existing one keeps wherever
+  /// the user put it.
+  createdCard: boolean;
 }
 
 const DEFAULT_OVERRIDES: ManualOverrides = {
@@ -161,7 +168,7 @@ export function ensureAgentSession(
     });
   }
 
-  const card = upsertAgentCard(launchIdentity, opts.cwd);
+  const { card, created } = upsertAgentCard(launchIdentity, opts.cwd, undefined, !opts.onBoard);
   return {
     action,
     identity: launchIdentity,
@@ -170,6 +177,7 @@ export function ensureAgentSession(
     command,
     card,
     named,
+    createdCard: created,
   };
 }
 
@@ -240,7 +248,7 @@ export function ensureRushAgentSession(
   }
 
   const launchIdentity: AgentIdentity = { ...identity, sessionId, tmuxName: `rush-${hostId}` };
-  const card = upsertAgentCard(launchIdentity, opts.cwd, cardId);
+  const { card, created } = upsertAgentCard(launchIdentity, opts.cwd, cardId, !opts.onBoard);
   return {
     action,
     identity: launchIdentity,
@@ -249,6 +257,7 @@ export function ensureRushAgentSession(
     command,
     card,
     named: false,
+    createdCard: created,
   };
 }
 
@@ -409,8 +418,16 @@ function sleepMs(ms: number): void {
 }
 
 /// Reconcile the agent's card to current truth. Writes only when something
-/// meaningful changed, so a healthy reconcile is a true no-op on disk.
-function upsertAgentCard(identity: AgentIdentity, cwd: string, cardId?: string): Link {
+/// meaningful changed, so a healthy reconcile is a true no-op on disk. A new
+/// card is a long-running agent from the start, so it lands in the Agents
+/// section; fields this does not manage (pins, the agent flag, sync revs)
+/// are carried over from an existing card.
+function upsertAgentCard(
+  identity: AgentIdentity,
+  cwd: string,
+  cardId?: string,
+  asAgent = true
+): { card: Link; created: boolean } {
   const existing = findCardByName(identity.cardName);
   const sessionPath = findSessionJsonl(identity.sessionId);
 
@@ -421,10 +438,12 @@ function upsertAgentCard(identity: AgentIdentity, cwd: string, cardId?: string):
     existing.sessionLink?.sessionPath === sessionPath &&
     existing.tmuxLink?.sessionName === identity.tmuxName &&
     existing.worktreeLink?.path === cwd;
-  if (unchanged) return existing;
+  if (unchanged) return { card: existing, created: false };
 
   const now = isoNow();
   const card: Link = {
+    ...existing,
+    agentAt: existing ? existing.agentAt : asAgent ? now : undefined,
     id: existing?.id ?? cardId ?? generateKsuid("card"),
     name: identity.cardName,
     column: existing?.column ?? "in_progress",
@@ -440,6 +459,8 @@ function upsertAgentCard(identity: AgentIdentity, cwd: string, cardId?: string):
     assistant: identity.runtime,
     isRemote: false,
   };
+  // A relaunch brings a deleted card back rather than writing it still deleted.
+  delete (card as Link & { deletedAt?: string }).deletedAt;
   upsertCard(card);
-  return card;
+  return { card, created: !existing };
 }

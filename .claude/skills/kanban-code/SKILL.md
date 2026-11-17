@@ -27,6 +27,7 @@ kanban channel send <name> "message" # broadcast (goes to everyone but you)
 kanban channel history <name> -n 50  # last 50 messages
 kanban dm <handle> "message"         # direct message another agent
 kanban dm history <handle>           # DM history with that handle
+kanban agent add|remove <card>       # move a card into / out of the Agents section
 ```
 
 All commands accept `-j/--json` for machine-readable output.
