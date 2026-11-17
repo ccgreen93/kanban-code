@@ -23,4 +23,18 @@ public enum KanbanCodeColumn: String, Codable, CaseIterable, Sendable {
     public var allowsBoardTaskCreation: Bool {
         self != .allSessions
     }
+
+    /// The lanes the board shows, from the user's column order (Settings >
+    /// General > Board). A column missing from `order` is hidden; All
+    /// Sessions also hides while it has no cards. An order that would leave
+    /// the board empty falls back to the default lanes.
+    public static func visibleColumns(order: [KanbanCodeColumn], allSessionsHasCards: Bool) -> [KanbanCodeColumn] {
+        var seen: Set<KanbanCodeColumn> = []
+        var visible = order.filter { seen.insert($0).inserted }
+        if !allSessionsHasCards { visible.removeAll { $0 == .allSessions } }
+        if visible.isEmpty {
+            visible = allCases.filter { $0 != .allSessions || allSessionsHasCards }
+        }
+        return visible
+    }
 }
