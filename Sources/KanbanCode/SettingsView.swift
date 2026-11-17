@@ -928,6 +928,8 @@ struct GeneralSettingsView: View {
                 }
             }
 
+            BoardColumnsSettingsSection()
+
             Section("Integrations") {
                 statusRow("tmux", available: tmuxAvailable)
                 statusRow("GitHub CLI (gh)", available: ghAvailable)

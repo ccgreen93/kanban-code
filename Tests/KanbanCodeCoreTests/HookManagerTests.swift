@@ -424,4 +424,82 @@ struct HookManagerTests {
         }
         try HookManager.uninstall(for: .codex, settingsPath: settingsPath)
     }
+
+    // MARK: - Matchers
+
+    /// Settings shaped like the ones that kept cards working: another tool's
+    /// `SubagentStop` group matches only its own subagents, and an older
+    /// install added the hook script to it.
+    private func narrowedSettings(dir: String, scriptPath: String) throws -> String {
+        let settingsPath = (dir as NSString).appendingPathComponent("settings.json")
+        try HookManager.install(claudeSettingsPath: settingsPath, hookScriptPath: scriptPath)
+        var root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: settingsPath))) as! [String: Any]
+        var hooks = root["hooks"] as! [String: Any]
+        hooks["SubagentStop"] = [[
+            "matcher": "bmad-.*",
+            "hooks": [
+                ["type": "command", "command": "/opt/bmad/context-save.sh"],
+                ["type": "command", "command": scriptPath],
+            ],
+        ]]
+        root["hooks"] = hooks
+        try JSONSerialization.data(withJSONObject: root).write(to: URL(fileURLWithPath: settingsPath))
+        return settingsPath
+    }
+
+    @Test("A hook only in a group a matcher narrows is not installed")
+    func narrowedGroupIsNotInstalled() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let scriptPath = (dir as NSString).appendingPathComponent(".kanban-code/hook.sh")
+        let settingsPath = try narrowedSettings(dir: dir, scriptPath: scriptPath)
+        #expect(!HookManager.isInstalled(claudeSettingsPath: settingsPath))
+    }
+
+    @Test("Install moves the hook out of a narrowed group into one that matches everything")
+    func installLeavesNarrowedGroup() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let scriptPath = (dir as NSString).appendingPathComponent(".kanban-code/hook.sh")
+        let settingsPath = try narrowedSettings(dir: dir, scriptPath: scriptPath)
+
+        #expect(HookManager.addMissingHooks(for: .claude, settingsPaths: [settingsPath], hookScriptPath: scriptPath))
+        #expect(HookManager.isInstalled(claudeSettingsPath: settingsPath))
+
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: settingsPath))) as! [String: Any]
+        let groups = (root["hooks"] as! [String: Any])["SubagentStop"] as! [[String: Any]]
+        #expect(groups.count == 2)
+        let bmad = try #require(groups.first { $0["matcher"] as? String == "bmad-.*" })
+        let bmadCommands = (bmad["hooks"] as! [[String: Any]]).compactMap { $0["command"] as? String }
+        #expect(bmadCommands == ["/opt/bmad/context-save.sh"], "the other tool's hook stays, ours leaves")
+        let ours = try #require(groups.first { $0["matcher"] as? String == "" })
+        #expect((ours["hooks"] as! [[String: Any]]).compactMap { $0["command"] as? String } == [scriptPath])
+
+        // Running again changes nothing.
+        try HookManager.install(claudeSettingsPath: settingsPath, hookScriptPath: scriptPath)
+        let again = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: settingsPath))) as! [String: Any]
+        #expect(((again["hooks"] as! [String: Any])["SubagentStop"] as! [[String: Any]]).count == 2)
+    }
+
+    @Test("Install joins a group that matches everything rather than a narrowed one")
+    func installSkipsNarrowedFirstGroup() throws {
+        let dir = try makeTempDir()
+        defer { cleanup(dir) }
+        let settingsPath = (dir as NSString).appendingPathComponent("settings.json")
+        let scriptPath = (dir as NSString).appendingPathComponent(".kanban-code/hook.sh")
+        try """
+        {"hooks":{"Stop":[
+            {"matcher":"Bash","hooks":[{"type":"command","command":"/opt/guard.sh"}]},
+            {"matcher":"*","hooks":[{"type":"command","command":"/opt/log.sh"}]}
+        ]}}
+        """.write(toFile: settingsPath, atomically: true, encoding: .utf8)
+
+        try HookManager.install(claudeSettingsPath: settingsPath, hookScriptPath: scriptPath)
+
+        let root = try JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: settingsPath))) as! [String: Any]
+        let groups = (root["hooks"] as! [String: Any])["Stop"] as! [[String: Any]]
+        #expect(groups.count == 2)
+        #expect((groups[0]["hooks"] as! [[String: Any]]).count == 1, "the narrowed group is left alone")
+        #expect((groups[1]["hooks"] as! [[String: Any]]).compactMap { $0["command"] as? String } == ["/opt/log.sh", scriptPath])
+    }
 }

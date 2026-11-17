@@ -101,7 +101,32 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
         if live.count != started.count {
             runningSubagents[sessionId] = live.isEmpty ? nil : live
         }
-        return !live.isEmpty
+        guard !live.isEmpty else { return false }
+        // A start the app saw without its stop (a stop hook that never ran,
+        // or events read back after a relaunch) must not hold the card for
+        // the whole timeout. A working subagent writes its own transcript, so
+        // once every one of them has gone quiet, none is running.
+        let recent = Date.now.addingTimeInterval(-activeTimeout)
+        if live.contains(where: { $0 > recent }) { return true }
+        guard let path = sessionPaths[sessionId],
+              let quietFor = Self.subagentTranscriptsQuietFor(sessionPath: path) else { return true }
+        if quietFor > activeTimeout {
+            runningSubagents.removeValue(forKey: sessionId)
+            return false
+        }
+        return true
+    }
+
+    /// Seconds since any subagent transcript of the session was written, or
+    /// nil when it has none to read. Claude Code keeps them in a folder named
+    /// after the session's transcript: `<session>/subagents/agent-*.jsonl`.
+    static func subagentTranscriptsQuietFor(sessionPath: String) -> TimeInterval? {
+        let dir = ((sessionPath as NSString).deletingPathExtension as NSString).appendingPathComponent("subagents")
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: dir) else { return nil }
+        let ages = names.filter { $0.hasSuffix(".jsonl") }.compactMap {
+            fileAge((dir as NSString).appendingPathComponent($0))
+        }
+        return ages.min()
     }
 
     /// Timeout (seconds) before treating a hook-active session as timed out.

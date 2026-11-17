@@ -186,6 +186,11 @@ public final class AppState: @unchecked Sendable {
             if excludedPaths != oldValue { pathExclusion = PathExclusion(excludedPaths) }
         }
     }
+    /// The board's lanes in order, as Settings stores them; a column left
+    /// out is hidden (`KanbanCodeColumn.visibleColumns`).
+    public var columnOrder: [KanbanCodeColumn] = KanbanCodeColumn.allCases {
+        didSet { if columnOrder != oldValue { cardInputsVersion &+= 1 } }
+    }
     /// `excludedPaths`, compiled.
     public private(set) var pathExclusion: PathExclusion = .none
     /// Project paths discovered from sessions but not yet configured.
@@ -685,9 +690,10 @@ public final class AppState: @unchecked Sendable {
         }
         if newByColumn != cardsByColumn { cardsByColumn = newByColumn }
 
-        let alwaysVisible: [KanbanCodeColumn] = [.backlog, .inProgress, .waiting, .inReview, .done]
-        var newVisible = alwaysVisible
-        if (newByColumn[.allSessions]?.count ?? 0) > 0 { newVisible.append(.allSessions) }
+        let newVisible = KanbanCodeColumn.visibleColumns(
+            order: columnOrder,
+            allSessionsHasCards: (newByColumn[.allSessions]?.count ?? 0) > 0
+        )
         if newVisible != visibleColumns { visibleColumns = newVisible }
 
         let newSidebar = SidebarLayout.sections(
@@ -917,6 +923,8 @@ public enum Action: Sendable {
 
     // Settings / misc
     case settingsLoaded(projects: [Project], excludedPaths: [String], remote: RemoteSettings?, remoteMode: RemoteMode = .boxd, boxd: BoxdSettings? = nil)
+    /// The board's column order and visibility, from Settings.
+    case columnOrderLoaded([KanbanCodeColumn])
     case setError(String?)
     /// A prompt sent from the card's chat did not reach its session.
     case promptSendFailed(cardId: String, prompt: QueuedPrompt, message: String)
@@ -3070,6 +3078,10 @@ public enum Reducer {
             state.boxdSettings = boxd
             return []
 
+        case .columnOrderLoaded(let order):
+            state.columnOrder = order
+            return []
+
         // MARK: Remote machines
 
         case .remoteMachineAssigned(let cardId, let remote):
@@ -3644,6 +3656,7 @@ public final class BoardStore: @unchecked Sendable {
                     remoteMode: settings.remoteMode,
                     boxd: settings.boxd
                 ))
+                dispatch(.columnOrderLoaded(settings.columnOrder))
             }
         }
         // Also load cached links so cards appear instantly
