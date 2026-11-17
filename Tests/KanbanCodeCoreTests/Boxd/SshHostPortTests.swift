@@ -296,3 +296,23 @@ struct SshHostPortTests {
         #expect(rewriter.mapPath("/root/.kanban-code/context/x.json") == "\(home)/.kanban-code/context/x.json")
     }
 }
+
+@Suite("SshMachine identity")
+struct SshMachineIdentityTests {
+    @Test("Renaming a machine keeps its list identity, so the name field keeps focus")
+    func renameKeepsIdentity() {
+        var machine = SshMachine(name: "a", target: "root@host")
+        let id = machine.id
+        machine.name = "ab"
+        #expect(machine.id == id)
+    }
+
+    @Test("Identity is not part of equality")
+    func identityIgnoredByEquality() {
+        let a = SshMachine(name: "box", target: "root@host")
+        let b = SshMachine(name: "box", target: "root@host")
+        #expect(a.id != b.id)
+        #expect(a == b)
+        #expect(a.hashValue == b.hashValue)
+    }
+}
