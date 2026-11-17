@@ -238,13 +238,71 @@ final class BatchedTerminalView: LocalProcessTerminalView {
         }
     }
 
+    // MARK: - Mouse
+
+    /// A card on tmux (anything but rush), whose mouse tmux handles once
+    /// it asked for it (`TmuxCardMouse`).
+    var handsMouseToTmux: Bool {
+        guard let kanbanSession else { return false }
+        return !RushSessionName.isRush(kanbanSession) && terminal.mouseMode != .off
+    }
+
+    /// A press with option, shift or control selects the terminal's own
+    /// way, over what is on screen. Those modifiers never reach tmux, where
+    /// they move or split panes.
+    private static let nativeSelectionModifiers: NSEvent.ModifierFlags = [.option, .shift, .control]
+
+    /// Mouse reporting as it was before a native press turned it off.
+    private var reportingBeforeNativePress: Bool?
+
+    override func mouseDown(with event: NSEvent) {
+        if handsMouseToTmux {
+            if !event.modifierFlags.intersection(Self.nativeSelectionModifiers).isEmpty {
+                reportingBeforeNativePress = allowMouseReporting
+                allowMouseReporting = false
+            } else {
+                // tmux draws the selection now; one made here would linger.
+                selectNone()
+                // A double or triple click selects in copy-mode.
+                if event.clickCount > 1, let kanbanSession {
+                    TerminalCache.shared.noteCopyMode(session: kanbanSession)
+                }
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        if handsMouseToTmux, reportingBeforeNativePress == nil, let kanbanSession {
+            TerminalCache.shared.noteCopyMode(session: kanbanSession)
+        }
+        super.mouseDragged(with: event)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        super.mouseUp(with: event)
+        if let before = reportingBeforeNativePress {
+            allowMouseReporting = before
+            reportingBeforeNativePress = nil
+        }
+    }
+
     // MARK: - Copy
 
-    /// With nothing selected here and the program drawing its own selection
-    /// (it asked for the mouse), cmd+c goes to the program as a kitty-encoded
-    /// super+c, so rush copies what was dragged over.
+    /// With nothing selected here, cmd+c copies tmux's selection in a card
+    /// on tmux. A program drawing its own selection (rush) gets a
+    /// kitty-encoded super+c, so it copies what was dragged over.
     override func copy(_ sender: Any) {
         if (getSelection() ?? "").isEmpty, terminal.mouseMode != .off {
+            if handsMouseToTmux, let session = kanbanSession {
+                Task { @MainActor in
+                    guard let adapter = await TerminalCache.remoteAdapter(for: session),
+                          let text = await adapter.copySelection(session: session) else { return }
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }
+                return
+            }
             send(txt: "\u{1b}[99;9u")
             return
         }
@@ -752,6 +810,13 @@ final class TerminalCache {
                 return nil // consume during cooldown
             }
 
+            // tmux has the mouse: the wheel goes to it as reports over the
+            // attached client, no tmux process per scroll.
+            if let self, let terminal = self.terminals[session], terminal.handsMouseToTmux {
+                self.sendWheel(to: terminal, session: session, event: event)
+                return nil
+            }
+
             self?.queueScroll(
                 session: session,
                 deltaY: event.scrollingDeltaY,
@@ -770,6 +835,53 @@ final class TerminalCache {
             MainActor.assumeIsolated {
                 self?.applyAppearanceIfChanged()
             }
+        }
+    }
+
+    // MARK: - Scroll through tmux's mouse
+
+    /// A card whose tmux may be in copy-mode now (a wheel up, a drag, a
+    /// double click): the next key leaves it first, and output is drawn
+    /// without dropping frames while it scrolls. Leaving copy-mode by
+    /// scrolling back down is tmux's; the next key's cancel is then a no-op.
+    func noteCopyMode(session: String) {
+        guard !copyModeSessions.contains(session) else { return }
+        copyModeSessions.insert(session)
+        terminals[session]?.passthroughMode = true
+    }
+
+    /// One scroll event as wheel reports, a line each (the card's bindings
+    /// scroll copy-mode a line per report). A trackpad's points add up to
+    /// lines across events, like `queueScroll`.
+    private func sendWheel(to terminal: BatchedTerminalView, session: String, event: NSEvent) {
+        let total = (scrollRemainder[session] ?? 0)
+            + Self.wheelLines(deltaY: event.scrollingDeltaY, precise: event.hasPreciseScrollingDeltas, lineHeight: currentLineHeight)
+        let lines = Int(total.rounded(.towardZero))
+        scrollRemainder[session] = total - Double(lines)
+        guard lines != 0 else { return }
+        if lines > 0 { noteCopyMode(session: session) }
+        terminal.sendWheel(lines: max(-100, min(100, lines)), at: event)
+        if lines < 0, copyModeSessions.contains(session) { checkCopyModeLeft(session: session) }
+    }
+
+    private var copyModeChecks: [String: Task<Void, Never>] = [:]
+
+    /// Scrolled down to the bottom, tmux leaves copy-mode on its own. Once
+    /// the wheel rests, ask whether it did, so the terminal drops frames
+    /// again and the next key needs no cancel.
+    private func checkCopyModeLeft(session: String) {
+        copyModeChecks[session]?.cancel()
+        copyModeChecks[session] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled,
+                  let adapter = await Self.remoteAdapter(for: session),
+                  let reply = try? await adapter.run(["display-message", "-p", "-t", session, "#{pane_in_mode}"], timeout: 5),
+                  reply.succeeded,
+                  reply.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "0",
+                  let self else { return }
+            self.copyModeChecks[session] = nil
+            guard self.copyModeSessions.remove(session) != nil else { return }
+            self.terminals[session]?.passthroughMode = false
         }
     }
 
@@ -867,7 +979,7 @@ final class TerminalCache {
     /// The tmux adapter of a session on a machine. A machine the app has
     /// as paused or unreachable, but boxd reports running, is reconnected
     /// first, so the first wheel tick or key after a restart is not lost.
-    private static func remoteAdapter(for session: String) async -> TmuxAdapter? {
+    static func remoteAdapter(for session: String) async -> TmuxAdapter? {
         if let adapter = try? AppServices.tmux.adapter(for: session) { return adapter }
         guard let machine = AppServices.machine(forSession: session),
               let supervisor = AppServices.boxdSupervisor,
@@ -969,11 +1081,10 @@ final class TerminalCache {
         }
         let terminal = BatchedTerminalView(frame: frame)
         terminal.kanbanSession = sessionName
-        // The assistant may ask for mouse tracking to select text on its
-        // own. The terminal keeps its native selection instead, and the
-        // wheel reaches tmux through the scroll monitor. rush draws its own
-        // scrollback, so its sessions get the mouse.
-        terminal.allowMouseReporting = RushSessionName.isRush(sessionName)
+        // tmux (with the card's `mouse on`) and rush draw the scrollback,
+        // so they get the mouse: only they can select past the screen.
+        // Option, shift or control selects natively instead.
+        terminal.allowMouseReporting = true
         terminal.lossless = RushSessionName.isRush(sessionName)
         // Dark terminal colors matching a real terminal
         terminal.nativeBackgroundColor = NSColor(red: 0.07, green: 0.07, blue: 0.07, alpha: 1.0)
@@ -1072,6 +1183,11 @@ final class TerminalCache {
             script = Self.rushScript(rush: RushCliAdapter.findExecutable(), id: rushId)
         } else {
             script = Self.attachScript(tmux: Self.tmuxPath, session: sessionName)
+        }
+        if AppServices.peerCard(forSession: sessionName) == nil, !RushSessionName.isRush(sessionName) {
+            Task {
+                await Self.remoteAdapter(for: sessionName)?.enableCardMouse(session: sessionName)
+            }
         }
         terminal.startProcess(
             executable: userShell,

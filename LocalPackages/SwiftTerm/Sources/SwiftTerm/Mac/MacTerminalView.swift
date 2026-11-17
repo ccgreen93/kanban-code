@@ -2029,11 +2029,11 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         if autoScrollDelta < 0 {
             scrollUp(lines: autoScrollDelta * -1)
         } else {
-            scrollUp(lines: autoScrollDelta)
+            scrollDown(lines: autoScrollDelta)
         }
     }
     
-    public override func mouseDown(with event: NSEvent) {
+    open override func mouseDown(with event: NSEvent) {
         if allowMouseReporting && terminal.mouseMode.sendButtonPress() {
             sharedMouseEvent(with: event)
             return
@@ -2072,7 +2072,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
     
     var didSelectionDrag: Bool = false
     
-    public override func mouseUp(with event: NSEvent) {
+    open override func mouseUp(with event: NSEvent) {
         let hit = calculateMouseHit(with: event).grid
         updateHoverLink(at: hit, commandOverride: commandActive || event.modifierFlags.contains(.command))
         if let result = linkForClick(at: hit, hasCommandModifier: event.modifierFlags.contains(.command)) {
@@ -2092,7 +2092,7 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         didSelectionDrag = false
     }
     
-    public override func mouseDragged(with event: NSEvent) {
+    open override func mouseDragged(with event: NSEvent) {
         let displayBuffer = terminal.displayBuffer
         let mouseHit = calculateMouseHit(with: event)
         let hit = mouseHit.grid
@@ -2262,6 +2262,21 @@ open class TerminalView: NSView, NSTextInputClient, NSUserInterfaceValidations, 
         }
     }
     
+    /// Sends `lines` wheel reports (up when positive) at the pointer of
+    /// `event`, for a host that turns scroll deltas into lines itself.
+    /// Without modifiers, which would make them different bindings.
+    public func sendWheel(lines: Int, at event: NSEvent) {
+        guard lines != 0, terminal.mouseMode != .off else { return }
+        let buttonFlags = terminal.encodeButton(
+            button: lines > 0 ? 4 : 5, release: false, shift: false, meta: false, control: false)
+        let displayBuffer = terminal.displayBuffer
+        let hit = calculateMouseHit(with: event)
+        let screenRow = max(0, min(displayBuffer.rows - 1, hit.grid.row - displayBuffer.yDisp))
+        for _ in 0..<abs(lines) {
+            terminal.sendEvent(buttonFlags: buttonFlags, x: hit.grid.col, y: screenRow, pixelX: hit.pixels.col, pixelY: hit.pixels.row)
+        }
+    }
+
     /// A program that asked for the mouse gets the wheel as buttons 4 (up)
     /// and 5 (down), one report per line turned, as xterm sends it. A
     /// trackpad turns fractions of a line per event, so they add up until a

@@ -89,6 +89,13 @@ public final class TmuxAdapter: TmuxManagerPort, @unchecked Sendable {
         // The card's view has its own header; tmux's status line (on by
         // default, bright green since tmux 3.8) only takes a row from it.
         _ = try? await runTmux(["set-option", "-t", name, "status", "off"])
+        // A pane's scrollback is sized when the pane is made, so the first
+        // pane is made again once the session has the card's larger limit.
+        // Nothing runs in it yet: the command is typed below.
+        for option in TmuxCardMouse.sessionOptionCommands(session: name) {
+            _ = try? await runTmux(option)
+        }
+        _ = try? await runTmux(["respawn-pane", "-k", "-t", name])
 
         if let command, !command.isEmpty {
             if command.contains("\n") {
