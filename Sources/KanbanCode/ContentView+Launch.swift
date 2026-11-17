@@ -51,7 +51,8 @@ extension ContentView {
                 promptImagePaths: card.link.promptImagePaths ?? [],
                 assistant: card.link.effectiveAssistant,
                 apiServiceId: card.link.apiServiceId,
-                modelOverride: card.link.modelOverride
+                modelOverride: card.link.modelOverride,
+                effortOverride: card.link.effortOverride
             )
         }
     }
@@ -231,7 +232,8 @@ extension ContentView {
             sessionId: sessionId,
             assistant: card.link.effectiveAssistant,
             apiServiceId: card.link.apiServiceId,
-            modelOverride: card.link.modelOverride
+            modelOverride: card.link.modelOverride,
+            effortOverride: card.link.effortOverride
         )
     }
 

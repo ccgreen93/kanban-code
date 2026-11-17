@@ -2384,6 +2384,7 @@ public enum Reducer {
             if link.effectiveAssistant != newAssistant {
                 link.apiServiceId = nil
                 link.modelOverride = nil
+                link.effortOverride = nil
                 if !newAssistant.supportsContextThresholdSelfCompact {
                     link.queuedPrompts?.removeAll { $0.selfCompactThresholdTokens != nil }
                 }
@@ -2744,6 +2745,7 @@ public enum Reducer {
                     }
                     link.parentCardId = existing.parentCardId
                     link.modelOverride = existing.modelOverride
+                    link.effortOverride = existing.effortOverride
                     link.selfCompactContextThresholdTokens = existing.selfCompactContextThresholdTokens
                     // The machine record is written by the supervisor, never
                     // by the reconciler. A snapshot taken before the machine

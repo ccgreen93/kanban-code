@@ -326,6 +326,40 @@ struct CodingAssistantTests {
         ) == "claude --model 'custom model; echo '\\''unsafe'\\''' --dangerously-skip-permissions")
     }
 
+    @Test("Effort override adds --effort to Claude launch and resume commands")
+    func effortOverrideClaude() {
+        #expect(CodingAssistant.claude.launchCommand(
+            skipPermissions: true,
+            worktreeName: "",
+            modelOverride: "opus",
+            effortOverride: "xhigh"
+        ) == "claude --model opus --dangerously-skip-permissions --effort xhigh --worktree")
+        #expect(CodingAssistant.claude.resumeCommand(
+            sessionId: "abc",
+            skipPermissions: false,
+            effortOverride: "low"
+        ) == "claude --effort low --resume abc")
+    }
+
+    @Test("Effort override is ignored by assistants without an effort flag")
+    func effortOverrideIgnoredElsewhere() {
+        #expect(CodingAssistant.gemini.launchCommand(
+            skipPermissions: false,
+            worktreeName: nil,
+            effortOverride: "high"
+        ) == CodingAssistant.gemini.launchCommand(skipPermissions: false, worktreeName: nil))
+        #expect(!CodingAssistant.codex.supportsEffort)
+        #expect(CodingAssistant.claude.effortLevels == ["low", "medium", "high", "xhigh", "max"])
+    }
+
+    @Test("Link round-trips its effort override")
+    func linkEffortOverrideCodable() throws {
+        var link = Link(name: "t", projectPath: "/tmp", column: .backlog, source: .manual)
+        link.effortOverride = "max"
+        let decoded = try JSONDecoder().decode(Link.self, from: JSONEncoder().encode(link))
+        #expect(decoded.effortOverride == "max")
+    }
+
     @Test("Claude base URL env key is ANTHROPIC_BASE_URL")
     func claudeBaseURLEnvKey() {
         #expect(CodingAssistant.claude.baseURLEnvKey == "ANTHROPIC_BASE_URL")

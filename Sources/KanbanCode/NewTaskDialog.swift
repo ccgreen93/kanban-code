@@ -12,8 +12,8 @@ struct NewTaskDialog: View {
     var enabledAssistants: [CodingAssistant] = CodingAssistant.allCases
     /// (prompt, projectPath, title, startImmediately, images) — creates task without an assistant set
     var onCreate: (String, String?, String?, Bool, [ImageAttachment]) -> Void = { _, _, _, _, _ in }
-    /// (prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId) — creates and launches directly (skips LaunchConfirmation)
-    var onCreateAndLaunch: (String, String?, String?, Bool, Bool, Bool, String?, [ImageAttachment], CodingAssistant, String?) -> Void = { _, _, _, _, _, _, _, _, _, _ in }
+    /// (prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort) — creates and launches directly (skips LaunchConfirmation)
+    var onCreateAndLaunch: (String, String?, String?, Bool, Bool, Bool, String?, [ImageAttachment], CodingAssistant, String?, String?, String?) -> Void = { _, _, _, _, _, _, _, _, _, _, _, _ in }
     /// Boxd machine the user picked. Called just before `onCreateAndLaunch`
     /// when the launch runs on boxd.
     var onMachineChoice: (BoxdMachineChoice) -> Void = { _ in }
@@ -43,8 +43,15 @@ struct NewTaskDialog: View {
     @State private var machineChoice: BoxdMachineChoice = .newMachine
     @AppStorage("dangerouslySkipPermissions") private var dangerouslySkipPermissions = true
     @AppStorage("lastSelectedProjectPath") private var lastSelectedProjectPath = ""
+    /// Last model picked in this dialog: "" = assistant default, an alias, or
+    /// `customModelSentinel` with the id in `customModel`.
+    @AppStorage("newTaskModel") private var modelChoice = ""
+    @AppStorage("newTaskCustomModel") private var customModel = ""
+    /// Last effort picked in this dialog: "" = assistant default.
+    @AppStorage("newTaskEffort") private var effortChoice = ""
 
     private static let customPathSentinel = "__custom__"
+    private static let customModelSentinel = "__custom__"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -113,6 +120,10 @@ struct NewTaskDialog: View {
                 .onChange(of: selectedServiceId) {
                     if !commandEdited { command = commandPreview }
                 }
+            }
+
+            if startImmediately {
+                modelAndEffortSection
             }
 
             // Start immediately toggle
@@ -248,10 +259,70 @@ struct NewTaskDialog: View {
             if !commandEdited { command = commandPreview }
         }
         .onChange(of: selectedAssistantRaw) {
+            dropChoicesForOtherAssistants()
             if !commandEdited { command = commandPreview }
             // Reset to default service for the newly selected assistant
             selectedServiceId = defaultAPIServiceIds[selectedAssistant.rawValue]
         }
+    }
+
+    // MARK: - Model & effort
+
+    @ViewBuilder
+    private var modelAndEffortSection: some View {
+        HStack(spacing: 12) {
+            Picker("Model", selection: $modelChoice) {
+                Text("Default").tag("")
+                ForEach(selectedAssistant.modelAliases, id: \.self) { alias in
+                    Text(alias.capitalized).tag(alias)
+                }
+                Divider()
+                Text("Custom...").tag(Self.customModelSentinel)
+            }
+            if selectedAssistant.supportsEffort {
+                Picker("Effort", selection: $effortChoice) {
+                    Text("Default").tag("")
+                    ForEach(selectedAssistant.effortLevels, id: \.self) { level in
+                        Text(level).tag(level)
+                    }
+                }
+            }
+        }
+        .onChange(of: modelChoice) {
+            if !commandEdited { command = commandPreview }
+        }
+        .onChange(of: customModel) {
+            if !commandEdited { command = commandPreview }
+        }
+        .onChange(of: effortChoice) {
+            if !commandEdited { command = commandPreview }
+        }
+        if modelChoice == Self.customModelSentinel {
+            TextField("Model id, e.g. claude-opus-5-5", text: $customModel)
+                .textFieldStyle(.roundedBorder)
+                .font(.app(.caption))
+        }
+    }
+
+    /// Model aliases and effort levels belong to one assistant.
+    private func dropChoicesForOtherAssistants() {
+        if !selectedAssistant.modelAliases.contains(modelChoice), modelChoice != Self.customModelSentinel {
+            modelChoice = ""
+        }
+        if !selectedAssistant.effortLevels.contains(effortChoice) { effortChoice = "" }
+    }
+
+    /// The model the launch passes as `--model`, nil for the assistant default.
+    private var resolvedModel: String? {
+        let raw = modelChoice == Self.customModelSentinel ? customModel : modelChoice
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// The effort the launch passes as `--effort`, nil for the assistant default.
+    private var resolvedEffort: String? {
+        guard selectedAssistant.effortLevels.contains(effortChoice) else { return nil }
+        return effortChoice
     }
 
     // MARK: - Remote row
@@ -360,7 +431,9 @@ struct NewTaskDialog: View {
                 commandEdited ? command : nil,
                 images,
                 selectedAssistant,
-                selectedServiceId
+                selectedServiceId,
+                resolvedModel,
+                resolvedEffort
             )
         } else {
             onCreate(prompt, proj, titleOrNil, false, images)
@@ -442,7 +515,9 @@ struct NewTaskDialog: View {
         let launchCmd = selectedAssistant.launchCommand(
             skipPermissions: dangerouslySkipPermissions,
             worktreeName: worktreeName,
-            service: service
+            service: service,
+            modelOverride: resolvedModel,
+            effortOverride: resolvedEffort
         )
         let template = settings.commandTemplate(for: selectedAssistant, remote: effectiveRunRemotely)
         parts.append(CodingAssistant.applyCommandTemplate(launchCmd, template: template))

@@ -21,6 +21,7 @@ struct LaunchConfig: Identifiable {
     let assistant: CodingAssistant
     let apiServiceId: String?
     let modelOverride: String?
+    let effortOverride: String?
 
     init(
         cardId: String,
@@ -36,7 +37,8 @@ struct LaunchConfig: Identifiable {
         promptImagePaths: [String] = [],
         assistant: CodingAssistant = .claude,
         apiServiceId: String? = nil,
-        modelOverride: String? = nil
+        modelOverride: String? = nil,
+        effortOverride: String? = nil
     ) {
         self.cardId = cardId
         self.projectPath = projectPath
@@ -52,6 +54,7 @@ struct LaunchConfig: Identifiable {
         self.assistant = assistant
         self.apiServiceId = apiServiceId
         self.modelOverride = modelOverride
+        self.effortOverride = effortOverride
     }
 }
 
@@ -924,8 +927,8 @@ struct ContentView: View {
                     onCreate: { prompt, projectPath, title, startImmediately, images in
                         createManualTask(prompt: prompt, projectPath: projectPath, title: title, startImmediately: startImmediately, images: images)
                     },
-                    onCreateAndLaunch: { prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId in
-                        createManualTaskAndLaunch(prompt: prompt, projectPath: projectPath, title: title, createWorktree: createWorktree, runRemotely: runRemotely, skipPermissions: skipPermissions, commandOverride: commandOverride, images: images, assistant: assistant, apiServiceId: apiServiceId)
+                    onCreateAndLaunch: { prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort in
+                        createManualTaskAndLaunch(prompt: prompt, projectPath: projectPath, title: title, createWorktree: createWorktree, runRemotely: runRemotely, skipPermissions: skipPermissions, commandOverride: commandOverride, images: images, assistant: assistant, apiServiceId: apiServiceId, model: model, effort: effort)
                     },
                     onMachineChoice: { pendingMachineChoice = $0 }
                 )
@@ -971,6 +974,7 @@ struct ContentView: View {
                     assistant: config.assistant,
                     initialServiceId: config.apiServiceId,
                     modelOverride: config.modelOverride,
+                    effortOverride: config.effortOverride,
                     externalSessionWarning: config.isResume
                         ? store.state.cards.first { $0.id == config.cardId }?.externalSessionPresence?.resumeWarning
                         : nil,
@@ -2534,7 +2538,8 @@ struct ContentView: View {
             cmd += card.link.effectiveAssistant.resumeCommand(
                 sessionId: sessionId,
                 skipPermissions: false,
-                modelOverride: card.link.modelOverride
+                modelOverride: card.link.modelOverride,
+                effortOverride: card.link.effortOverride
             )
         }
         NSPasteboard.general.clearContents()
@@ -2991,7 +2996,7 @@ struct ContentView: View {
         }
     }
 
-    private func createManualTaskAndLaunch(prompt: String, projectPath: String?, title: String? = nil, createWorktree: Bool, runRemotely: Bool, skipPermissions: Bool = true, commandOverride: String? = nil, images: [ImageAttachment] = [], assistant: CodingAssistant = .claude, apiServiceId: String? = nil) {
+    private func createManualTaskAndLaunch(prompt: String, projectPath: String?, title: String? = nil, createWorktree: Bool, runRemotely: Bool, skipPermissions: Bool = true, commandOverride: String? = nil, images: [ImageAttachment] = [], assistant: CodingAssistant = .claude, apiServiceId: String? = nil, model: String? = nil, effort: String? = nil) {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String
         if let title, !title.isEmpty {
@@ -3014,6 +3019,9 @@ struct ContentView: View {
             assistant: assistant
         )
         link.apiServiceId = apiServiceId
+        // Stored on the card so resumes keep the same model and effort.
+        link.modelOverride = model
+        link.effortOverride = effort
         if newTaskAsAgent { link.agentAt = .now }
         let effectivePath = projectPath ?? NSHomeDirectory()
 

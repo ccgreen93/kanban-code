@@ -199,7 +199,8 @@ public enum CodingAssistant: String, Codable, Sendable, CaseIterable {
         skipPermissions: Bool,
         worktreeName: String?,
         service: APIService? = nil,
-        modelOverride: String? = nil
+        modelOverride: String? = nil,
+        effortOverride: String? = nil
     ) -> String {
         var prefix: [String] = []
         if let launcher = service?.launcherPrefix { prefix.append(contentsOf: launcher.split(separator: " ").map(String.init)) }
@@ -210,6 +211,7 @@ public enum CodingAssistant: String, Codable, Sendable, CaseIterable {
 
         var flags: [String] = []
         if skipPermissions { flags.append(autoApproveFlag) }
+        flags.append(contentsOf: effortFlags(effortOverride))
         flags.append(contentsOf: interactiveLaunchFlags)
         if supportsWorktree, let worktreeName {
             flags += worktreeName.isEmpty ? ["--worktree"] : ["--worktree", worktreeName]
@@ -229,7 +231,8 @@ public enum CodingAssistant: String, Codable, Sendable, CaseIterable {
         sessionId: String,
         skipPermissions: Bool,
         service: APIService? = nil,
-        modelOverride: String? = nil
+        modelOverride: String? = nil,
+        effortOverride: String? = nil
     ) -> String {
         var prefix: [String] = []
         if let launcher = service?.launcherPrefix { prefix.append(contentsOf: launcher.split(separator: " ").map(String.init)) }
@@ -252,10 +255,38 @@ public enum CodingAssistant: String, Codable, Sendable, CaseIterable {
         case .claude, .gemini:
             var flags: [String] = []
             if skipPermissions { flags.append(autoApproveFlag) }
+            flags.append(contentsOf: effortFlags(effortOverride))
             flags.append(resumeFlag)
             flags.append(sessionId)
             return (prefix + sep + flags).joined(separator: " ")
         }
+    }
+
+    /// Reasoning effort levels the assistant's CLI accepts, lowest first.
+    /// Empty when the assistant has no effort setting.
+    public var effortLevels: [String] {
+        switch self {
+        case .claude: ["low", "medium", "high", "xhigh", "max"]
+        case .gemini, .codex: []
+        }
+    }
+
+    public var supportsEffort: Bool { !effortLevels.isEmpty }
+
+    /// Model aliases offered in pickers. Any other model id can still be typed.
+    public var modelAliases: [String] {
+        switch self {
+        case .claude: ["fable", "opus", "sonnet", "haiku"]
+        case .gemini, .codex: []
+        }
+    }
+
+    /// `--effort <level>` when the assistant supports effort and a level is set.
+    private func effortFlags(_ effort: String?) -> [String] {
+        guard supportsEffort,
+              let effort = effort?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !effort.isEmpty else { return [] }
+        return ["--effort", shellEscapeCommandArgument(effort)]
     }
 
     /// Wraps a built assistant command with the user's launch command template.

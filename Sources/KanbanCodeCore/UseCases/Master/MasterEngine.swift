@@ -158,6 +158,7 @@ public final class MasterEngine {
         store.dispatch(.launchCard(cardId: cardId, prompt: prompt, projectPath: projectPath, worktreeName: worktreeName, runRemotely: runRemotely, commandOverride: commandOverride))
         if keepSelection { store.dispatch(.selectCard(cardId: previouslySelectedCardId)) }
         let effectiveModelOverride = modelOverride ?? store.state.links[cardId]?.modelOverride
+        let effortOverride = store.state.links[cardId]?.effortOverride
         // The reducer computed the unique tmux name and stored it in the link.
         let predictedTmuxName = store.state.links[cardId]?.tmuxLink?.sessionName ?? cardId
         KanbanCodeLog.info("launch", "Starting launch for card=\(cardId.prefix(12)) tmux=\(predictedTmuxName) project=\(projectPath)")
@@ -362,7 +363,8 @@ public final class MasterEngine {
                         preamble, claudeAccount.preamble(shell: claudeAccount.unsetsConfigDirectory ? await platform.paneShell() : nil)),
                     assistant: assistant,
                     service: resolvedService,
-                    modelOverride: effectiveModelOverride
+                    modelOverride: effectiveModelOverride,
+                    effortOverride: effortOverride
                 )
                 KanbanCodeLog.info("launch", "Tmux session created: \(tmuxName)")
                 if let preparation = boxdPreparation, let boxdSupervisor {
@@ -710,6 +712,7 @@ public final class MasterEngine {
             return true
         }
         let effectiveModelOverride = modelOverride ?? card.link.modelOverride
+        let effortOverride = card.link.effortOverride
         let sessionId = card.link.sessionLink?.sessionId ?? card.link.id
         // For worktree cards, cd into the worktree — that's where Claude stored the session data.
         let projectPath: String
@@ -1007,7 +1010,8 @@ public final class MasterEngine {
                         preamble, claudeAccount.preamble(shell: claudeAccount.unsetsConfigDirectory ? await platform.paneShell() : nil)),
                     assistant: assistant,
                     service: resolvedService,
-                    modelOverride: effectiveModelOverride
+                    modelOverride: effectiveModelOverride,
+                    effortOverride: effortOverride
                 )
                 KanbanCodeLog.info("resume", "Resume launched for card=\(cardId.prefix(12)) actualTmux=\(actualTmuxName)")
                 if let preparation = boxdPreparation, let boxdSupervisor {
