@@ -63,13 +63,25 @@ public enum HookManager {
 
         return requiredHooks(for: assistant).allSatisfy { eventName in
             guard let groups = hooks[eventName] as? [[String: Any]] else { return false }
-            return groups.contains { group in
-                guard let hookEntries = group["hooks"] as? [[String: Any]] else { return false }
-                return hookEntries.contains { entry in
-                    (entry["command"] as? String)?.contains(".kanban-code/hook.sh") == true
-                }
-            }
+            return groups.contains { isCatchAll($0) && callsHookScript($0) }
         }
+    }
+
+    /// Whether a hook group runs for every event of its kind.
+    ///
+    /// A matcher narrows a group to some tools or subagents. The hook script
+    /// in a narrowed group misses the rest, so it does not count as installed
+    /// there: another tool's `SubagentStop` group matching `bmad-.*` once
+    /// swallowed every other subagent's stop, and cards stayed working.
+    static func isCatchAll(_ group: [String: Any]) -> Bool {
+        guard let matcher = group["matcher"] as? String else { return group["matcher"] == nil }
+        let trimmed = matcher.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty || trimmed == "*"
+    }
+
+    static func callsHookScript(_ group: [String: Any]) -> Bool {
+        guard let entries = group["hooks"] as? [[String: Any]] else { return false }
+        return entries.contains { ($0["command"] as? String)?.contains(".kanban-code/hook.sh") == true }
     }
 
     /// Backward-compatible: check Claude hooks only.
@@ -228,21 +240,23 @@ public enum HookManager {
         for eventName in requiredHooks(for: assistant) {
             var groups = hooks[eventName] as? [[String: Any]] ?? []
 
-            // Check if .kanban-code/hook.sh already exists in any group
-            let alreadyInstalled = groups.contains { group in
-                guard let entries = group["hooks"] as? [[String: Any]] else { return false }
-                return entries.contains { ($0["command"] as? String)?.contains(".kanban-code/hook.sh") == true }
-            }
-
-            if !alreadyInstalled {
-                if groups.isEmpty {
-                    groups.append(["matcher": "", "hooks": [hookEntry]])
-                } else {
-                    var firstGroup = groups[0]
-                    var entries = firstGroup["hooks"] as? [[String: Any]] ?? []
+            if !groups.contains(where: { isCatchAll($0) && callsHookScript($0) }) {
+                // Out of any group a matcher narrows (an older install put it
+                // there), leaving that group's other hooks as they were.
+                for i in groups.indices where !isCatchAll(groups[i]) {
+                    if var entries = groups[i]["hooks"] as? [[String: Any]] {
+                        entries.removeAll { ($0["command"] as? String)?.contains(".kanban-code/hook.sh") == true }
+                        groups[i]["hooks"] = entries
+                    }
+                }
+                groups.removeAll { ($0["hooks"] as? [[String: Any]])?.isEmpty == true }
+                // Into a group that matches everything: an existing one, or our own.
+                if let i = groups.firstIndex(where: isCatchAll) {
+                    var entries = groups[i]["hooks"] as? [[String: Any]] ?? []
                     entries.append(hookEntry)
-                    firstGroup["hooks"] = entries
-                    groups[0] = firstGroup
+                    groups[i]["hooks"] = entries
+                } else {
+                    groups.append(["matcher": "", "hooks": [hookEntry]])
                 }
             }
 
