@@ -61,3 +61,13 @@ struct TriageViewHelpersTests {
         #expect(TriageFormat.tail("") == [])
     }
 }
+
+@Suite("Triage message preview")
+struct TriageMessagePreviewTests {
+    @Test("first line skips blank lines and trims")
+    func firstLine() {
+        #expect(TriageFormat.firstLine("\n\n  Done here.  \n\nMore detail.") == "Done here.")
+        #expect(TriageFormat.firstLine("") == "")
+        #expect(TriageFormat.firstLine("one line") == "one line")
+    }
+}

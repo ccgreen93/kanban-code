@@ -479,8 +479,10 @@ struct TriageView: View {
         guard let path = card.link.sessionLink?.sessionPath ?? card.session?.jsonlPath else { return }
         let assistant = card.link.effectiveAssistant
         let text = await Task.detached(priority: .utility) {
+            // The whole message: unfocused rows show its first line, the
+            // focused row all of it. (`textPreview` keeps only the first
+            // line of a long message — it is shaped for push notifications.)
             await TranscriptNotificationReader.lastAssistantText(transcriptPath: path, assistant: assistant)
-                .map(TranscriptNotificationReader.textPreview)
         }.value
         guard !Task.isCancelled else { return }
         previews[card.id] = TriagePreview(lastActivity: key, text: text)

@@ -22,6 +22,16 @@ extension AttentionRequest {
 }
 
 enum TriageFormat {
+    /// Longest message the focused row renders; a huge one is cut here.
+    static let messageLimit = 20_000
+
+    /// The first non-empty line, for a one-line preview.
+    static func firstLine(_ text: String) -> String {
+        text.split(whereSeparator: \.isNewline)
+            .lazy.map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty } ?? ""
+    }
+
     /// "<1m", "12m", "2h 5m", "3d".
     static func wait(_ interval: TimeInterval) -> String {
         let minutes = Int(max(0, interval) / 60)
@@ -154,10 +164,27 @@ struct TriageItemRow: View {
                 .font(.app(.callout))
                 .foregroundStyle(.secondary)
         } else if let preview, !preview.isEmpty {
-            Text("\(card.link.effectiveAssistant.displayName): \u{201C}\(preview)\u{201D}")
-                .font(.app(.callout))
-                .foregroundStyle(.secondary)
-                .lineLimit(isFocused ? 4 : 1)
+            if isFocused {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("\(card.link.effectiveAssistant.displayName):")
+                        .font(.app(.caption, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    ScrollView {
+                        SelectableMarkdownText(
+                            content: .markdown(String(preview.prefix(TriageFormat.messageLimit))),
+                            appearance: .init(font: .app(.callout), foregroundColor: .secondaryLabelColor)
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 280)
+                    .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text("\(card.link.effectiveAssistant.displayName): \u{201C}\(TriageFormat.firstLine(preview))\u{201D}")
+                    .font(.app(.callout))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
         }
     }
 
