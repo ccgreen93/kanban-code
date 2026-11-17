@@ -202,4 +202,58 @@ struct SubagentActivityTests {
         #expect(hooks.contains("SubagentStart"))
         #expect(hooks.contains("SubagentStop"))
     }
+
+    // MARK: - Subagent transcripts
+
+    /// A session transcript with a `subagents` folder whose newest transcript
+    /// was written `quietFor` seconds ago.
+    private func session(subagentsQuietFor quietFor: TimeInterval) throws -> (path: String, cleanup: () -> Void) {
+        let dir = NSTemporaryDirectory() + "kanban-code-subagents-\(UUID().uuidString)"
+        let sub = dir + "/s1/subagents"
+        try FileManager.default.createDirectory(atPath: sub, withIntermediateDirectories: true)
+        let path = dir + "/s1.jsonl"
+        try "".write(toFile: path, atomically: true, encoding: .utf8)
+        for (name, age) in [("agent-a.jsonl", quietFor), ("agent-b.jsonl", quietFor + 600)] {
+            let file = sub + "/" + name
+            try "{}\n".write(toFile: file, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date.now.addingTimeInterval(-age)], ofItemAtPath: file)
+        }
+        try "{}".write(toFile: sub + "/agent-c.meta.json", atomically: true, encoding: .utf8)
+        return (path, { try? FileManager.default.removeItem(atPath: dir) })
+    }
+
+    private func stateWithOldStart(subagentsQuietFor quietFor: TimeInterval) async throws -> ActivityState {
+        let detector = ClaudeCodeActivityDetector(stopDelay: 0)
+        await detector.handleHookEvent(HookEvent(
+            sessionId: "s1", eventName: "SubagentStart", timestamp: Date.now.addingTimeInterval(-1800)))
+        await detector.handleHookEvent(HookEvent(
+            sessionId: "s1", eventName: "Stop", timestamp: Date.now.addingTimeInterval(-1700)))
+        let file = try session(subagentsQuietFor: quietFor)
+        defer { file.cleanup() }
+        _ = await detector.pollActivity(sessionPaths: ["s1": file.path])
+        return await detector.activityState(for: "s1")
+    }
+
+    /// A stop hook that never reached the app kept a finished session on the
+    /// in progress column for two hours.
+    @Test("subagents whose transcripts went quiet are not running, stop or no stop")
+    func quietSubagentsAreDone() async throws {
+        #expect(try await stateWithOldStart(subagentsQuietFor: 900) == .needsAttention)
+    }
+
+    @Test("a subagent still writing its transcript keeps the session working")
+    func writingSubagentKeepsWorking() async throws {
+        #expect(try await stateWithOldStart(subagentsQuietFor: 20) == .activelyWorking)
+    }
+
+    @Test("a subagent that just started counts before it writes anything")
+    func freshStartCountsBeforeItsTranscript() async throws {
+        let detector = ClaudeCodeActivityDetector(stopDelay: 0)
+        await detector.handleHookEvent(HookEvent(sessionId: "s1", eventName: "SubagentStart"))
+        await detector.handleHookEvent(HookEvent(sessionId: "s1", eventName: "Stop"))
+        let file = try session(subagentsQuietFor: 3600)
+        defer { file.cleanup() }
+        _ = await detector.pollActivity(sessionPaths: ["s1": file.path])
+        #expect(await detector.activityState(for: "s1") == .activelyWorking)
+    }
 }
