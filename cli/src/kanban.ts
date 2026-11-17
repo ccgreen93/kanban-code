@@ -608,6 +608,8 @@ program
   .option("--no-skip-permissions", "Do NOT pass --dangerously-skip-permissions")
   .option("--no-resume", "Always start a fresh session, never resume a prior one under this slug (for ephemeral agents)")
   .option("--host <host>", "Where the session runs: tmux, or rush (a rush host that moves between signed-in Claude accounts)", "tmux")
+  .option("--prompt <text>", "First prompt for a fresh session (ignored when it resumes or is already running)")
+  .option("--prompt-file <path>", "Read the first prompt for a fresh session from a file")
   .option("--board", "Put a newly created card on the board instead of the Agents section")
   .option("-j, --json", "Output as JSON")
   .action(async (slug: string, opts) => {
@@ -615,9 +617,14 @@ program
       const cwd = resolve(opts.cwd);
       if (!existsSync(cwd)) throw new Error(`cwd does not exist: ${cwd}`);
       if (!isAgentHost(opts.host)) throw new Error(`--host must be tmux or rush, not ${JSON.stringify(opts.host)}`);
+      if (opts.prompt && opts.promptFile) throw new Error("Pass --prompt or --prompt-file, not both");
+      const initialPrompt = opts.promptFile
+        ? readFileSync(resolve(opts.promptFile), "utf-8").trim()
+        : opts.prompt;
       const identity = agentIdentity(slug, "claude", opts.host);
       const result = ensureAgentSession(identity, {
         cwd,
+        initialPrompt: initialPrompt || undefined,
         model: opts.model,
         skipPermissions: opts.skipPermissions,
         forceFresh: opts.resume === false,

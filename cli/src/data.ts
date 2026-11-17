@@ -1021,7 +1021,7 @@ export function findCard(links: Link[], idOrPrefix: string): Link | undefined {
 
 // ── Utilities ────────────────────────────────────────────────────────
 
-function shellEscape(s: string): string {
+export function shellEscape(s: string): string {
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
 

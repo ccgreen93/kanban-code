@@ -124,6 +124,23 @@ describe("headless agent launch/resume (real tmux)", skipIfNoTmux, () => {
     assert.equal(readLinks()[0].sessionLink?.sessionId, result.sessionId);
   });
 
+  test("an initial prompt starts a fresh session and is not resent on resume", () => {
+    const fresh = ensureAgentSession(identity, {
+      cwd: workspace,
+      bin: "true",
+      initialPrompt: "Read the conductor's notes. Don't skip it.",
+    });
+    assert.match(fresh.command!, / 'Read the conductor'\\''s notes\. Don'\\''t skip it\.'$/);
+
+    execSync(`tmux kill-session -t ${identity.tmuxName}`);
+    const projDir = join(claudeHome, "projects", "some-encoded-cwd");
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(join(projDir, `${identity.sessionId}.jsonl`), '{"type":"user"}\n');
+    const resumed = ensureAgentSession(identity, { cwd: workspace, bin: "true", initialPrompt: "again" });
+    assert.equal(resumed.action, "resumed");
+    assert.doesNotMatch(resumed.command!, /again/);
+  });
+
   test("a new card lands in the Agents section", () => {
     const result = ensureAgentSession(identity, { cwd: workspace, bin: "true" });
     assert.equal(result.createdCard, true);

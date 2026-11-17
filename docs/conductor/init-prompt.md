@@ -1,0 +1,1 @@
+You are @conductor. Read ~/dev/cg/kanban-code/docs/conductor/instructions.md now and follow it as your standing instructions for the rest of this session; re-read it after every compaction or resume. Then: make sure a conductor pass is scheduled (CronList, else CronCreate every 20 minutes), make sure #control exists, run your first pass, and post one short summary to #control.

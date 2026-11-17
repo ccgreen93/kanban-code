@@ -9,6 +9,7 @@ import {
   findCodexRollout,
   killTmuxSession,
   rushIdFromSessionName,
+  shellEscape,
 } from "../data.js";
 import {
   listAgentRushHosts,
@@ -49,6 +50,11 @@ export interface LaunchOptions {
   /// How long a runtime that is named after launch gets to come up before the
   /// name is given up on. A loaded box draws its first frame slowly.
   nameTimeoutMs?: number;
+  /// The first prompt of a fresh session, e.g. its standing instructions. A
+  /// resumed or running session already has its conversation and is not
+  /// sent it again. Claude on tmux only: it is the runtime's positional
+  /// prompt argument.
+  initialPrompt?: string;
   /// A card this launch creates goes on the board instead of the Agents
   /// section beside it.
   onBoard?: boolean;
@@ -141,6 +147,13 @@ export function ensureAgentSession(
     });
     action = sessionExists ? "resumed" : "launched";
     if (opts.extraArgs?.length) args.push(...opts.extraArgs);
+    if (opts.initialPrompt && !sessionExists) {
+      if (identity.runtime !== "claude") {
+        throw new Error(`An initial prompt is only supported for claude agents, not ${identity.runtime}`);
+      }
+      // Typed into the pane's shell, so it is quoted as one argument.
+      args.push(shellEscape(opts.initialPrompt));
+    }
     command = [bin, ...args].join(" ");
 
     // Both runtimes' hooks correlate events to this agent via these env vars,
@@ -195,6 +208,7 @@ export function ensureRushAgentSession(
   opts: LaunchOptions
 ): LaunchResult {
   const skipPerms = opts.skipPermissions ?? true;
+  if (opts.initialPrompt) throw new Error("An initial prompt is not supported on a rush host yet; use --host tmux");
   const existing = findCardByName(identity.cardName);
   const cardId = existing?.id ?? generateKsuid("card");
 
