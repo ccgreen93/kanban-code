@@ -36,24 +36,31 @@ struct CardStatusAndPriorityTests {
         #expect(await detector.activityState(for: "s1") == .blocked)
     }
 
-    /// A transcript whose last write was `age` seconds ago.
-    private func transcript(age: TimeInterval) -> (path: String, cleanup: () -> Void) {
+    /// A transcript whose newest message is `messageAgo` seconds old and
+    /// whose file was last touched `touchedAgo` seconds ago, followed by the
+    /// system lines Claude writes while it waits.
+    private func transcript(messageAgo: TimeInterval, touchedAgo: TimeInterval? = nil) -> (path: String, cleanup: () -> Void) {
         let dir = NSTemporaryDirectory() + "kanban-code-blocked-\(UUID().uuidString)"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         let path = (dir as NSString).appendingPathComponent("t.jsonl")
-        try? "data".write(toFile: path, atomically: true, encoding: .utf8)
+        let text = TranscriptFixture.message(at: Date.now.addingTimeInterval(-messageAgo))
+            + TranscriptFixture.systemLine(at: Date.now.addingTimeInterval(-messageAgo + 0.1))
+        try? text.write(toFile: path, atomically: true, encoding: .utf8)
         try? FileManager.default.setAttributes(
-            [.modificationDate: Date.now.addingTimeInterval(-age)], ofItemAtPath: path)
+            [.modificationDate: Date.now.addingTimeInterval(-(touchedAgo ?? messageAgo))], ofItemAtPath: path)
         return (path, { try? FileManager.default.removeItem(atPath: dir) })
     }
 
-    private func prompted(ago: TimeInterval, lastWriteAgo: TimeInterval) async -> ActivityState {
+    private func state(
+        after event: String, ago: TimeInterval, messageAgo: TimeInterval, touchedAgo: TimeInterval? = nil,
+        type: String? = "permission_prompt"
+    ) async -> ActivityState {
         let detector = ClaudeCodeActivityDetector()
         await detector.handleHookEvent(HookEvent(
-            sessionId: "s1", eventName: "Notification", notificationType: "permission_prompt",
+            sessionId: "s1", eventName: event, notificationType: event == "Notification" ? type : nil,
             timestamp: Date.now.addingTimeInterval(-ago)
         ))
-        let file = transcript(age: lastWriteAgo)
+        let file = transcript(messageAgo: messageAgo, touchedAgo: touchedAgo)
         defer { file.cleanup() }
         _ = await detector.pollActivity(sessionPaths: ["s1": file.path])
         return await detector.activityState(for: "s1")
@@ -62,20 +69,47 @@ struct CardStatusAndPriorityTests {
     @Test("A prompt still open stays blocked, even right after the question was written")
     func openPromptStaysBlocked() async {
         // Claude writes the question, then the notification fires.
-        #expect(await prompted(ago: 1, lastWriteAgo: 4) == .blocked)
-        #expect(await prompted(ago: 600, lastWriteAgo: 606) == .blocked)
+        #expect(await state(after: "Notification", ago: 1, messageAgo: 4) == .blocked)
+        #expect(await state(after: "Notification", ago: 600, messageAgo: 606) == .blocked)
     }
 
     @Test("An answered prompt reads as working through a long quiet tool run")
     func answeredPromptStaysWorking() async {
         // Answered, then a test run writes nothing for a minute: no flicker to red.
-        #expect(await prompted(ago: 120, lastWriteAgo: 60) == .activelyWorking)
-        #expect(await prompted(ago: 30, lastWriteAgo: 2) == .activelyWorking)
+        #expect(await state(after: "Notification", ago: 120, messageAgo: 60) == .activelyWorking)
+        #expect(await state(after: "Notification", ago: 30, messageAgo: 2) == .activelyWorking)
     }
 
     @Test("An answered prompt whose turn went silent past the timeout stops reading as working")
     func answeredPromptTimesOut() async {
-        #expect(await prompted(ago: 900, lastWriteAgo: 400) == .needsAttention)
+        #expect(await state(after: "Notification", ago: 900, messageAgo: 400) == .needsAttention)
+    }
+
+    @Test("Waking the Mac touches idle transcripts; that is not work")
+    func wakeTouchIsNotWork() async {
+        // Idle reminder days ago, newest message before it, file touched now.
+        let days: TimeInterval = 5 * 86400
+        #expect(await state(after: "Notification", ago: days, messageAgo: days + 120, touchedAgo: 1,
+                            type: "idle_prompt") == .needsAttention)
+        #expect(await state(after: "Notification", ago: days, messageAgo: days + 6, touchedAgo: 1) == .blocked)
+        #expect(await state(after: "Stop", ago: days, messageAgo: days + 0.5, touchedAgo: 1) == .needsAttention)
+    }
+
+    @Test("The newest message is found past large lines and trailing metadata")
+    func readsNewestMessage() throws {
+        let dir = NSTemporaryDirectory() + "kanban-code-stamp-\(UUID().uuidString)"
+        try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let path = (dir as NSString).appendingPathComponent("t.jsonl")
+        let when = Date(timeIntervalSince1970: 1_800_000_000.25)
+        let big = String(repeating: "x", count: 200_000)
+        let text = TranscriptFixture.message(at: when.addingTimeInterval(-60))
+            + TranscriptFixture.message(at: when, text: big)
+            + "{\"type\":\"bridge-session\",\"sessionId\":\"s1\"}\n"
+            + TranscriptFixture.systemLine(at: when.addingTimeInterval(5))
+        try text.write(toFile: path, atomically: true, encoding: .utf8)
+        let stamp = try #require(ClaudeCodeActivityDetector.readLastConversationStamp(path))
+        #expect(abs(stamp.timeIntervalSince(when)) < 0.01)
     }
 
     @Test("Blocked cards go to Waiting")
@@ -142,5 +176,22 @@ struct CardStatusAndPriorityTests {
     @Test("Priorities order by urgency")
     func ordering() {
         #expect(CardPriority.allCases.sorted(by: >) == [.urgent, .high, .medium, .low])
+    }
+}
+
+/// Transcript lines shaped like Claude Code's.
+enum TranscriptFixture {
+    static func stamp(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f.string(from: date)
+    }
+
+    static func message(at date: Date, text: String = "ok") -> String {
+        "{\"type\":\"assistant\",\"sessionId\":\"s1\",\"timestamp\":\"\(stamp(date))\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"\(text)\"}]}}\n"
+    }
+
+    static func systemLine(at date: Date) -> String {
+        "{\"type\":\"system\",\"subtype\":\"turn_duration\",\"sessionId\":\"s1\",\"timestamp\":\"\(stamp(date))\"}\n"
     }
 }

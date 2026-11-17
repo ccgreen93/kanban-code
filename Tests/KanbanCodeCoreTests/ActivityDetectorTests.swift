@@ -114,8 +114,8 @@ struct ActivityDetectorTests {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let path = (dir as NSString).appendingPathComponent("test.jsonl")
-        try? "data".write(toFile: path, atomically: true, encoding: .utf8)
-        // Write() sets mtime to now — 30s after the Stop event.
+        try? TranscriptFixture.message(at: .now).write(toFile: path, atomically: true, encoding: .utf8)
+        // A message stamped now — 30s after the Stop event.
         let _ = await detector.pollActivity(sessionPaths: ["s1": path])
 
         let state = await detector.activityState(for: "s1")
@@ -151,7 +151,7 @@ struct ActivityDetectorTests {
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let path = (dir as NSString).appendingPathComponent("test.jsonl")
-        try? "data".write(toFile: path, atomically: true, encoding: .utf8)
+        try? TranscriptFixture.message(at: .now).write(toFile: path, atomically: true, encoding: .utf8)
         let _ = await detector.pollActivity(sessionPaths: ["s1": path])
 
         let state = await detector.activityState(for: "s1")

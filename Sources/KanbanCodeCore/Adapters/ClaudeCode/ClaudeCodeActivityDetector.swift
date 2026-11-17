@@ -10,6 +10,9 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
     private var polledStates: [String: ActivityState] = [:]
     /// Session transcript paths (populated by pollActivity, used for direct mtime checks).
     private var sessionPaths: [String: String] = [:]
+    /// The newest conversation entry of each transcript, keyed by path and
+    /// valid while the file's size and mtime stay the same.
+    private var conversationStamps: [String: (size: UInt64, mtime: Date, stamp: Date?)] = [:]
     /// Sessions that received a Stop but might get a follow-up prompt.
     private var pendingStops: [String: Date] = [:]
     /// Last time UserPromptSubmit was seen per session — survives later Stop/Notification events.
@@ -221,16 +224,15 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
             // Continuation detection: ralph-loop (and similar stop-hook
             // continuation frameworks) inject `additionalContext` on Stop,
             // so Claude runs another turn WITHOUT firing a new UserPromptSubmit.
-            // The only signal we have is the transcript file being written to
-            // after the Stop event. If mtime advanced past the Stop timestamp,
-            // Claude is still working.
+            // The only signal we have is the transcript getting new messages
+            // after the Stop event. Its mtime alone is no proof: waking the
+            // Mac touches every open transcript without a new message.
             if let path = sessionPaths[sessionId],
                let fileAge = Self.fileAge(path),
-               fileAge < activeTimeout {
-                let fileMtime = Date.now.addingTimeInterval(-fileAge)
-                if fileMtime.timeIntervalSince(lastEvent.timestamp) > 1.0 {
-                    return .activelyWorking
-                }
+               fileAge < activeTimeout,
+               let stamp = lastConversationStamp(path),
+               stamp.timeIntervalSince(lastEvent.timestamp) > Self.answeredAfter {
+                return .activelyWorking
             }
             return .needsAttention
         case "SessionEnd":
@@ -240,14 +242,15 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
             // prompt, a question, or the idle reminder. Claude writes the
             // tool call that asks before the notification and nothing while
             // it waits, and no hook fires when the user answers. So a
-            // transcript written after the notification means the prompt was
+            // message written after the notification means the prompt was
             // answered and the turn goes on, until Stop, however long its
-            // tools then run without writing.
-            if let path = sessionPaths[sessionId], let fileAge = Self.fileAge(path) {
-                let fileMtime = Date.now.addingTimeInterval(-fileAge)
+            // tools then run without writing. A message, not a newer mtime:
+            // waking the Mac touches every open transcript.
+            if let path = sessionPaths[sessionId], let fileAge = Self.fileAge(path),
+               let stamp = lastConversationStamp(path) {
                 // Hook stamps are cut to the second: the notification may
                 // have come up to a second after its stamp.
-                if fileMtime.timeIntervalSince(lastEvent.timestamp) > Self.answeredAfter {
+                if stamp.timeIntervalSince(lastEvent.timestamp) > Self.answeredAfter {
                     // Safety net, as after UserPromptSubmit: a killed or
                     // abandoned turn stops reading as working.
                     return fileAge > activeTimeout ? .needsAttention : .activelyWorking
@@ -275,6 +278,59 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
             let message = event.message?.lowercased() ?? ""
             return message.contains("permission") || message.contains("approv")
         }
+    }
+
+    /// The timestamp of the newest user or assistant message in a
+    /// transcript, cached until the file changes. System lines (turn
+    /// summaries, away summaries) and metadata lines do not count: they are
+    /// written while Claude waits.
+    private func lastConversationStamp(_ path: String) -> Date? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+              let mtime = attrs[.modificationDate] as? Date,
+              let size = (attrs[.size] as? NSNumber)?.uint64Value else { return nil }
+        if let cached = conversationStamps[path], cached.size == size, cached.mtime == mtime {
+            return cached.stamp
+        }
+        let stamp = Self.readLastConversationStamp(path)
+        conversationStamps[path] = (size, mtime, stamp)
+        return stamp
+    }
+
+    /// Scans a transcript backwards from its end, 64KB first and then 1MB
+    /// when one large line fills the tail, for the newest message's stamp.
+    static func readLastConversationStamp(_ path: String) -> Date? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let fileSize = handle.seekToEndOfFile()
+        for window in [UInt64(64 << 10), UInt64(1 << 20)] {
+            let readSize = min(window, fileSize)
+            handle.seek(toFileOffset: fileSize - readSize)
+            let data = handle.readData(ofLength: Int(readSize))
+            var lines = data.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: true)
+            // The first line is cut unless the read started at the top.
+            if readSize < fileSize, !lines.isEmpty { lines.removeFirst() }
+            for line in lines.reversed() {
+                if let stamp = conversationStamp(of: line) { return stamp }
+            }
+            if readSize == fileSize { break }
+        }
+        return nil
+    }
+
+    private static let messageTypes: Set<String> = ["user", "assistant"]
+
+    private static func conversationStamp(of line: Data.SubSequence) -> Date? {
+        guard let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+              let type = obj["type"] as? String, messageTypes.contains(type),
+              let text = obj["timestamp"] as? String else { return nil }
+        return parseStamp(text)
+    }
+
+    private static func parseStamp(_ text: String) -> Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: text) { return date }
+        return ISO8601DateFormatter().date(from: text)
     }
 
     private static func fileAge(_ path: String) -> TimeInterval? {
