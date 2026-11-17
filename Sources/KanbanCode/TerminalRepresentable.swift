@@ -728,15 +728,25 @@ final class TerminalCache {
     private var scrollRemainder: [String: Double] = [:]
 
     private init() {
-        // Intercept keyDown events in terminal views for two purposes:
+        // Intercept keyDown events in terminal views for three purposes:
         // 1. Shift+Enter → send \n instead of \r (Claude Code newline vs submit)
-        // 2. Any key while in tmux copy-mode → exit copy-mode first, then let key through
+        // 2. Cmd+Backspace → Ctrl+U (delete line)
+        // 3. Any key while in tmux copy-mode → exit copy-mode first, then let key through
         shiftEnterMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let terminal = event.window?.firstResponder as? TerminalView else { return event }
 
             // Shift+Enter: send newline instead of carriage return
             if event.keyCode == 36, event.modifierFlags.contains(.shift) {
                 terminal.send([0x0a])
+                return nil
+            }
+
+            // Cmd+Backspace: delete the whole line (like Terminal.app / iTerm).
+            // Sends Ctrl+U (kill line before cursor), which shells and Claude
+            // Code's prompt both honour.
+            let lineKillMods = event.modifierFlags.intersection([.command, .option, .control, .shift])
+            if event.keyCode == 51, lineKillMods == .command {
+                terminal.send([0x15])
                 return nil
             }
 

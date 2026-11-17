@@ -14,7 +14,21 @@ public struct SshMachine: Codable, Sendable, Equatable, Hashable, Identifiable {
 
     public static let defaultRepoRoot = "~/Projects"
 
-    public var id: String { name }
+    /// Identity of the row in a list. Not the name: the name is edited in
+    /// place, and an identity that follows it rebuilds the row (and drops the
+    /// text field's focus) on every keystroke. Never stored, and not part of
+    /// equality.
+    public let id = UUID()
+
+    public static func == (a: SshMachine, b: SshMachine) -> Bool {
+        a.name == b.name && a.target == b.target && a.repoRoot == b.repoRoot
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(name)
+        hasher.combine(target)
+        hasher.combine(repoRoot)
+    }
 
     public init(name: String, target: String, repoRoot: String = SshMachine.defaultRepoRoot) {
         self.name = name
