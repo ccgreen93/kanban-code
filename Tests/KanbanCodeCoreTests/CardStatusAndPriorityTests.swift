@@ -36,6 +36,48 @@ struct CardStatusAndPriorityTests {
         #expect(await detector.activityState(for: "s1") == .blocked)
     }
 
+    /// A transcript whose last write was `age` seconds ago.
+    private func transcript(age: TimeInterval) -> (path: String, cleanup: () -> Void) {
+        let dir = NSTemporaryDirectory() + "kanban-code-blocked-\(UUID().uuidString)"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        let path = (dir as NSString).appendingPathComponent("t.jsonl")
+        try? "data".write(toFile: path, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes(
+            [.modificationDate: Date.now.addingTimeInterval(-age)], ofItemAtPath: path)
+        return (path, { try? FileManager.default.removeItem(atPath: dir) })
+    }
+
+    private func prompted(ago: TimeInterval, lastWriteAgo: TimeInterval) async -> ActivityState {
+        let detector = ClaudeCodeActivityDetector()
+        await detector.handleHookEvent(HookEvent(
+            sessionId: "s1", eventName: "Notification", notificationType: "permission_prompt",
+            timestamp: Date.now.addingTimeInterval(-ago)
+        ))
+        let file = transcript(age: lastWriteAgo)
+        defer { file.cleanup() }
+        _ = await detector.pollActivity(sessionPaths: ["s1": file.path])
+        return await detector.activityState(for: "s1")
+    }
+
+    @Test("A prompt still open stays blocked, even right after the question was written")
+    func openPromptStaysBlocked() async {
+        // Claude writes the question, then the notification fires.
+        #expect(await prompted(ago: 1, lastWriteAgo: 4) == .blocked)
+        #expect(await prompted(ago: 600, lastWriteAgo: 606) == .blocked)
+    }
+
+    @Test("An answered prompt reads as working through a long quiet tool run")
+    func answeredPromptStaysWorking() async {
+        // Answered, then a test run writes nothing for a minute: no flicker to red.
+        #expect(await prompted(ago: 120, lastWriteAgo: 60) == .activelyWorking)
+        #expect(await prompted(ago: 30, lastWriteAgo: 2) == .activelyWorking)
+    }
+
+    @Test("An answered prompt whose turn went silent past the timeout stops reading as working")
+    func answeredPromptTimesOut() async {
+        #expect(await prompted(ago: 900, lastWriteAgo: 400) == .needsAttention)
+    }
+
     @Test("Blocked cards go to Waiting")
     func blockedAssignsWaiting() {
         let link = Link(column: .inProgress, sessionLink: SessionLink(sessionId: "s1"))

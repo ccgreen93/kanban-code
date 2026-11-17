@@ -140,10 +140,12 @@ struct ActivityDetectorTests {
         #expect(state == .needsAttention, "Stop + stale file means Claude is done")
     }
 
-    @Test("Notification + fresh file → activelyWorking (Claude working during notification)")
+    @Test("Notification + file written after it → activelyWorking (prompt answered, Claude resumed)")
     func notificationWithFreshFile() async {
         let detector = ClaudeCodeActivityDetector()
-        await detector.handleHookEvent(HookEvent(sessionId: "s1", eventName: "Notification"))
+        await detector.handleHookEvent(HookEvent(
+            sessionId: "s1", eventName: "Notification", timestamp: Date.now.addingTimeInterval(-10)
+        ))
 
         let dir = NSTemporaryDirectory() + "kanban-code-notif-fresh-\(UUID().uuidString)"
         try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)

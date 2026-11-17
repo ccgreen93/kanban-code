@@ -236,15 +236,22 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
         case "SessionEnd":
             return .ended
         case "Notification":
-            // Notification fires when Claude wants user attention (tool
-            // approval, bash permission prompt, etc). Default to
-            // needsAttention unless the transcript is still being written to
-            // very recently — which indicates the user just auto-approved and
-            // Claude is already resuming work.
-            if let path = sessionPaths[sessionId],
-               let fileAge = Self.fileAge(path),
-               fileAge < 5 {
-                return .activelyWorking
+            // Notification fires when Claude wants the user: a permission
+            // prompt, a question, or the idle reminder. Claude writes the
+            // tool call that asks before the notification and nothing while
+            // it waits, and no hook fires when the user answers. So a
+            // transcript written after the notification means the prompt was
+            // answered and the turn goes on, until Stop, however long its
+            // tools then run without writing.
+            if let path = sessionPaths[sessionId], let fileAge = Self.fileAge(path) {
+                let fileMtime = Date.now.addingTimeInterval(-fileAge)
+                // Hook stamps are cut to the second: the notification may
+                // have come up to a second after its stamp.
+                if fileMtime.timeIntervalSince(lastEvent.timestamp) > Self.answeredAfter {
+                    // Safety net, as after UserPromptSubmit: a killed or
+                    // abandoned turn stops reading as working.
+                    return fileAge > activeTimeout ? .needsAttention : .activelyWorking
+                }
             }
             return Self.isBlockingNotification(lastEvent) ? .blocked : .needsAttention
         default:
@@ -254,6 +261,10 @@ public actor ClaudeCodeActivityDetector: ActivityDetector {
     }
 
     /// Quick mtime check — returns seconds since file was last modified, or nil on error.
+    /// How long after a Notification's stamp a transcript write proves the
+    /// prompt was answered: the stamp is cut to the second, plus margin.
+    static let answeredAfter: TimeInterval = 1.5
+
     /// Whether a Notification hook means Claude is stuck on the user mid-turn
     /// (a permission prompt, a question) rather than idling after a turn.
     static func isBlockingNotification(_ event: HookEvent) -> Bool {
