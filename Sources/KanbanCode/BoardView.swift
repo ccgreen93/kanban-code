@@ -11,6 +11,9 @@ struct BoardView: View {
     @AppStorage("boardRail.agentsCollapsed") private var agentsCollapsed = false
     @AppStorage("boardRail.channelsCollapsed") private var channelsCollapsed = false
     @AppStorage("boardRail.pinnedCollapsed") private var pinnedCollapsed = false
+    /// The whole Agents & Channels rail, toggled by the toolbar's left-panel
+    /// button and Cmd+B in board mode.
+    @AppStorage("boardRail.hidden") private var railHidden = false
     var onNewAgent: () -> Void = {}
     var onOpenChannel: (String) -> Void = { _ in }
     var onNewChannel: () -> Void = {}
@@ -243,8 +246,11 @@ struct BoardView: View {
         return ScrollViewReader { proxy in
             ScrollView(.horizontal, showsIndicators: true) {
                 HStack(alignment: .top, spacing: 6) {
-                    channelsPseudoColumn
-                        .id("channels")
+                    if !railHidden {
+                        channelsPseudoColumn
+                            .id("channels")
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+                    }
                     ForEach(store.state.visibleColumns, id: \.self) { column in
                         DroppableColumnView(
                             column: column,

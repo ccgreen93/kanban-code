@@ -100,6 +100,8 @@ struct ContentView: View {
     @State var deepSearchTrigger = false
     @AppStorage("showBoardInExpanded") var showBoardInExpanded = false
     @State var sidebarVisibility: NavigationSplitViewVisibility = .detailOnly
+    /// Agents & Channels rail hidden in board mode (shared with BoardView).
+    @AppStorage("boardRail.hidden") var boardRailHidden = false
     @State var showNewTask = false
     /// The open New Task sheet was opened from the Agents section, so the
     /// card it creates becomes a long-running agent.
@@ -426,6 +428,28 @@ struct ContentView: View {
         }
     }
 
+    /// The left-panel toggle. Replaces the system sidebar toggle, which did
+    /// nothing in board mode: in list mode it shows/hides the session list,
+    /// in board mode the Agents & Channels rail.
+    private var leftPanelToggleButton: some View {
+        Button { toggleLeftPanel() } label: {
+            Image(systemName: "sidebar.left")
+        }
+        .help(isExpandedDetail
+              ? "Toggle session list (⌘B)"
+              : (boardRailHidden ? "Show Agents & Channels (⌘B)" : "Hide Agents & Channels (⌘B)"))
+    }
+
+    func toggleLeftPanel() {
+        if isExpandedDetail {
+            showBoardInExpanded.toggle()
+        } else {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                boardRailHidden.toggle()
+            }
+        }
+    }
+
     /// Sidebar content for expanded mode — always list view.
     /// Toolbar items only included when sidebar is visible to avoid duplication in window toolbar.
     private var sidebarContent: some View {
@@ -435,6 +459,9 @@ struct ContentView: View {
                 // still say "open" from a past session while the sidebar is
                 // hidden, and its items would then double the detail's.
                 if sidebarVisibility != .detailOnly {
+                    ToolbarItem(placement: .automatic) {
+                        leftPanelToggleButton
+                    }
                     ToolbarItemGroup(placement: .automatic) {
                         Button { presentNewTask() } label: {
                             Image(systemName: "square.and.pencil")
@@ -1644,6 +1671,7 @@ struct ContentView: View {
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             sidebarContent
                 .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 720)
+                .toolbar(removing: .sidebarToggle)
         } detail: {
         boardWithHandlers
             .toolbar {
@@ -1655,6 +1683,9 @@ struct ContentView: View {
                 )
 
                 if tbVis.showBoardControls {
+                    ToolbarItem(placement: .navigation) {
+                        leftPanelToggleButton
+                    }
                     ToolbarItemGroup(placement: .navigation) {
                         Button { presentNewTask() } label: {
                             Image(systemName: "square.and.pencil")
@@ -2204,10 +2235,10 @@ struct ContentView: View {
         .keyboardShortcut(AppShortcut.toggleExpanded.key, modifiers: AppShortcut.toggleExpanded.modifiers)
         .hidden()
 
-        // Cmd+B — toggle sidebar in expanded mode
+        // Cmd+B — toggle the left panel (session list / Agents & Channels rail)
         Button("") {
             if AppShortcut.toggleSidebar.isActive(in: shortcutContext) {
-                showBoardInExpanded.toggle()
+                toggleLeftPanel()
             }
         }
         .keyboardShortcut(AppShortcut.toggleSidebar.key, modifiers: AppShortcut.toggleSidebar.modifiers)
