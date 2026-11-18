@@ -77,23 +77,26 @@ struct CardPlacementSidebarTests {
         return link
     }
 
-    private func sections(_ placement: CardPlacementMode) -> [SidebarSection] {
+    private func sections(_ placement: CardPlacementMode, order: [KanbanCodeColumn] = KanbanCodeColumn.allCases) -> [SidebarSection] {
         let state = AppState()
         state.cardPlacement = placement
+        state.columnOrder = order
         let placed = placedLive("card_parked", .backlog)
         var auto = Link(id: "card_auto", name: "card_auto", projectPath: "/repo", column: .waiting, source: .manual)
         auto.tmuxLink = TmuxLink(sessionName: "repo-card_auto")
-        state.links = [placed.id: placed, auto.id: auto]
+        let done = Link(id: "card_done", name: "card_done", projectPath: "/repo", column: .done, source: .manual)
+        state.links = [placed.id: placed, auto.id: auto, done.id: done]
         state.tmuxSessions = ["repo-card_parked", "repo-card_auto"]
         state.rebuildCards()
         return state.sidebarSections
     }
 
-    @Test("Free: a live card placed in Backlog is listed under Backlog, not Live")
-    func freeKeepsPlacedCardInColumn() {
+    @Test("Free: no Live section; every card is listed in its column, running or not")
+    func freeHasNoLiveSection() {
         let s = sections(.free)
-        #expect(s.first { $0.kind == .live }?.cards.map(\.id) == ["card_auto"])
+        #expect(!s.contains { $0.kind == .live })
         #expect(s.first { $0.kind == .column(.backlog) }?.cards.map(\.id) == ["card_parked"])
+        #expect(s.first { $0.kind == .column(.waiting) }?.cards.map(\.id) == ["card_auto"])
     }
 
     @Test("Strict: every live card is listed under Live, as before")
@@ -101,5 +104,21 @@ struct CardPlacementSidebarTests {
         let s = sections(.strict)
         #expect(Set(s.first { $0.kind == .live }?.cards.map(\.id) ?? []) == ["card_parked", "card_auto"])
         #expect(s.first { $0.kind == .column(.backlog) }?.cards.isEmpty == true)
+    }
+
+    @Test("The default column setting keeps the list's original order")
+    func defaultOrderUnchanged() {
+        #expect(SidebarLayout.columns(forBoardOrder: KanbanCodeColumn.allCases) == [.waiting, .inProgress, .inReview, .done, .backlog])
+        let kinds = sections(.free).map(\.kind)
+        #expect(kinds == [.column(.waiting), .column(.done), .column(.backlog)])
+    }
+
+    @Test("A custom column setting sets the list's order and hides its hidden columns")
+    func customOrderAndHidden() {
+        let order: [KanbanCodeColumn] = [.backlog, .waiting, .inProgress, .inReview, .allSessions]
+        #expect(SidebarLayout.columns(forBoardOrder: order) == [.backlog, .waiting, .inProgress, .inReview])
+        // Done is hidden, so its card is not listed; empty columns stay out, Backlog stays.
+        #expect(sections(.free, order: order).map(\.kind) == [.column(.backlog), .column(.waiting)])
+        #expect(SidebarLayout.columns(forBoardOrder: [.allSessions]) == SidebarLayout.columnOrder)
     }
 }

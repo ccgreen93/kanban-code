@@ -48,26 +48,39 @@ public struct SidebarSection: Equatable, Sendable {
 /// running now, then the columns in the phone's order with Backlog last.
 /// All Sessions is not listed; the board view keeps it.
 public enum SidebarLayout {
-    /// Columns after Pinned and Live.
+    /// Columns after Pinned and Live, while the board keeps its default
+    /// column order.
     public static let columnOrder: [KanbanCodeColumn] = [.waiting, .inProgress, .inReview, .done, .backlog]
+
+    /// The list's columns for the board's column setting: the phone's order
+    /// while the setting is the default, otherwise the user's order with
+    /// their hidden columns left out. All Sessions is never listed.
+    public static func columns(forBoardOrder order: [KanbanCodeColumn]) -> [KanbanCodeColumn] {
+        if order == KanbanCodeColumn.allCases { return columnOrder }
+        var seen: Set<KanbanCodeColumn> = []
+        let listed = order.filter { $0 != .allSessions && seen.insert($0).inserted }
+        return listed.isEmpty ? columnOrder : listed
+    }
 
     /// `cardsByColumn` holds the unpinned top-level cards of each column in
     /// their board order. Empty sections are left out, except Backlog, which
-    /// stays as the place to drop and refresh tasks. A card for which
-    /// `keepsColumn` holds stays in its column's section even while live
-    /// (free placement: the user put it there).
+    /// stays as the place to drop and refresh tasks. `columns` are the
+    /// column sections in order (`columns(forBoardOrder:)`). Without
+    /// `showsLive` (free placement) there is no Live section: every card is
+    /// listed in its column, running or not.
     public static func sections(
         agents: [KanbanCodeCard] = [],
         pinned: [KanbanCodeCard],
         cardsByColumn: [KanbanCodeColumn: [KanbanCodeCard]],
+        columns: [KanbanCodeColumn] = columnOrder,
+        showsLive: Bool = true,
         isLive: (KanbanCodeCard) -> Bool,
-        isBusy: (KanbanCodeCard) -> Bool,
-        keepsColumn: (KanbanCodeCard) -> Bool = { _ in false }
+        isBusy: (KanbanCodeCard) -> Bool
     ) -> [SidebarSection] {
         var out: [SidebarSection] = []
         if !agents.isEmpty { out.append(SidebarSection(kind: .agents, cards: agents)) }
         if !pinned.isEmpty { out.append(SidebarSection(kind: .pinned, cards: pinned)) }
-        let live = columnOrder.flatMap { cardsByColumn[$0] ?? [] }.filter { isLive($0) && !keepsColumn($0) }.sorted { a, b in
+        let live = !showsLive ? [] : columns.flatMap { cardsByColumn[$0] ?? [] }.filter(isLive).sorted { a, b in
             let busyA = isBusy(a), busyB = isBusy(b)
             if busyA != busyB { return busyA }
             let timeA = a.link.lastActivity ?? a.link.updatedAt
@@ -76,7 +89,7 @@ public enum SidebarLayout {
         }
         if !live.isEmpty { out.append(SidebarSection(kind: .live, cards: live)) }
         let liveIds = Set(live.map(\.id))
-        for column in columnOrder {
+        for column in columns {
             let cards = (cardsByColumn[column] ?? []).filter { !liveIds.contains($0.id) }
             if !cards.isEmpty || column == .backlog {
                 out.append(SidebarSection(kind: .column(column), cards: cards))

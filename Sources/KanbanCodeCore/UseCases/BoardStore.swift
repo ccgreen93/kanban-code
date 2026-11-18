@@ -704,9 +704,10 @@ public final class AppState: @unchecked Sendable {
             agents: newAgents,
             pinned: newPinned,
             cardsByColumn: newByColumn.mapValues { $0.filter { !$0.link.isPinned && !$0.link.isAgent } },
+            columns: SidebarLayout.columns(forBoardOrder: columnOrder),
+            showsLive: cardPlacement == .strict,
             isLive: { liveIds.contains($0.id) },
-            isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true },
-            keepsColumn: { [cardPlacement] in cardPlacement == .free && $0.link.manualOverrides.column }
+            isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true }
         )
         if newSidebar != sidebarSections { sidebarSections = newSidebar }
     }
