@@ -53,18 +53,21 @@ public enum SidebarLayout {
 
     /// `cardsByColumn` holds the unpinned top-level cards of each column in
     /// their board order. Empty sections are left out, except Backlog, which
-    /// stays as the place to drop and refresh tasks.
+    /// stays as the place to drop and refresh tasks. A card for which
+    /// `keepsColumn` holds stays in its column's section even while live
+    /// (free placement: the user put it there).
     public static func sections(
         agents: [KanbanCodeCard] = [],
         pinned: [KanbanCodeCard],
         cardsByColumn: [KanbanCodeColumn: [KanbanCodeCard]],
         isLive: (KanbanCodeCard) -> Bool,
-        isBusy: (KanbanCodeCard) -> Bool
+        isBusy: (KanbanCodeCard) -> Bool,
+        keepsColumn: (KanbanCodeCard) -> Bool = { _ in false }
     ) -> [SidebarSection] {
         var out: [SidebarSection] = []
         if !agents.isEmpty { out.append(SidebarSection(kind: .agents, cards: agents)) }
         if !pinned.isEmpty { out.append(SidebarSection(kind: .pinned, cards: pinned)) }
-        let live = columnOrder.flatMap { cardsByColumn[$0] ?? [] }.filter(isLive).sorted { a, b in
+        let live = columnOrder.flatMap { cardsByColumn[$0] ?? [] }.filter { isLive($0) && !keepsColumn($0) }.sorted { a, b in
             let busyA = isBusy(a), busyB = isBusy(b)
             if busyA != busyB { return busyA }
             let timeA = a.link.lastActivity ?? a.link.updatedAt

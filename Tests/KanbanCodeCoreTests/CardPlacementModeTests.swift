@@ -67,3 +67,39 @@ struct CardPlacementModeTests {
         #expect(state.cardPlacement == .free)
     }
 }
+
+@Suite("CardPlacementMode: list view")
+struct CardPlacementSidebarTests {
+    private func placedLive(_ id: String, _ column: KanbanCodeColumn) -> Link {
+        var link = Link(id: id, name: id, projectPath: "/repo", column: column, source: .manual)
+        link.manualOverrides.column = true
+        link.tmuxLink = TmuxLink(sessionName: "repo-\(id)")
+        return link
+    }
+
+    private func sections(_ placement: CardPlacementMode) -> [SidebarSection] {
+        let state = AppState()
+        state.cardPlacement = placement
+        let placed = placedLive("card_parked", .backlog)
+        var auto = Link(id: "card_auto", name: "card_auto", projectPath: "/repo", column: .waiting, source: .manual)
+        auto.tmuxLink = TmuxLink(sessionName: "repo-card_auto")
+        state.links = [placed.id: placed, auto.id: auto]
+        state.tmuxSessions = ["repo-card_parked", "repo-card_auto"]
+        state.rebuildCards()
+        return state.sidebarSections
+    }
+
+    @Test("Free: a live card placed in Backlog is listed under Backlog, not Live")
+    func freeKeepsPlacedCardInColumn() {
+        let s = sections(.free)
+        #expect(s.first { $0.kind == .live }?.cards.map(\.id) == ["card_auto"])
+        #expect(s.first { $0.kind == .column(.backlog) }?.cards.map(\.id) == ["card_parked"])
+    }
+
+    @Test("Strict: every live card is listed under Live, as before")
+    func strictListsLiveCardsUnderLive() {
+        let s = sections(.strict)
+        #expect(Set(s.first { $0.kind == .live }?.cards.map(\.id) ?? []) == ["card_parked", "card_auto"])
+        #expect(s.first { $0.kind == .column(.backlog) }?.cards.isEmpty == true)
+    }
+}

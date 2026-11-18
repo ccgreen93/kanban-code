@@ -192,7 +192,9 @@ public final class AppState: @unchecked Sendable {
         didSet { if columnOrder != oldValue { cardInputsVersion &+= 1 } }
     }
     /// Strict or free card placement, from Settings.
-    public var cardPlacement: CardPlacementMode = .strict
+    public var cardPlacement: CardPlacementMode = .strict {
+        didSet { if cardPlacement != oldValue { cardInputsVersion &+= 1 } }
+    }
     /// `excludedPaths`, compiled.
     public private(set) var pathExclusion: PathExclusion = .none
     /// Project paths discovered from sessions but not yet configured.
@@ -703,7 +705,8 @@ public final class AppState: @unchecked Sendable {
             pinned: newPinned,
             cardsByColumn: newByColumn.mapValues { $0.filter { !$0.link.isPinned && !$0.link.isAgent } },
             isLive: { liveIds.contains($0.id) },
-            isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true }
+            isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true },
+            keepsColumn: { [cardPlacement] in cardPlacement == .free && $0.link.manualOverrides.column }
         )
         if newSidebar != sidebarSections { sidebarSections = newSidebar }
     }
