@@ -63,6 +63,14 @@ struct BoardColumnsSettingsSection: View {
             rows = Self.rows(for: settings?.columnOrder ?? KanbanCodeColumn.allCases)
             placement = settings?.cardPlacement ?? .strict
         }
+        // The toolbar toggle changes the mode too.
+        .onReceive(NotificationCenter.default.publisher(for: .kanbanCodeSettingsChanged).receive(on: RunLoop.main)) { _ in
+            Task {
+                if let saved = (try? await settingsStore.read())?.cardPlacement, saved != placement {
+                    placement = saved
+                }
+            }
+        }
     }
 
     private func savePlacement(_ newValue: CardPlacementMode) {

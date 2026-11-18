@@ -213,6 +213,46 @@ struct ContentView: View {
         .labelsHidden()
     }
 
+    /// Strict or free card placement, from the toolbar: a click flips the
+    /// mode, the menu names both. Saved to the same setting as Settings >
+    /// General > Card Placement.
+    private var cardPlacementMenu: some View {
+        let placement = store.state.cardPlacement
+        return Menu {
+            Picker("Card Placement", selection: Binding(
+                get: { store.state.cardPlacement },
+                set: { setCardPlacement($0) }
+            )) {
+                Label("Strict: columns follow sessions and PRs", systemImage: "lock").tag(CardPlacementMode.strict)
+                Label("Free: drop cards into any column", systemImage: "lock.open").tag(CardPlacementMode.free)
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Label(placement == .strict ? "Strict" : "Free",
+                  systemImage: placement == .strict ? "lock" : "lock.open")
+        } primaryAction: {
+            setCardPlacement(placement == .strict ? .free : .strict)
+        }
+        .help(placement == .strict
+              ? "Strict placement: columns follow sessions and pull requests. Click for free placement."
+              : "Free placement: drop cards into any column. Click for strict placement.")
+        .accessibilityIdentifier("cardPlacementToggle")
+    }
+
+    private func setCardPlacement(_ placement: CardPlacementMode) {
+        guard placement != store.state.cardPlacement else { return }
+        store.dispatch(.cardPlacementLoaded(placement))
+        Task {
+            do {
+                var settings = try await settingsStore.read()
+                guard settings.cardPlacement != placement else { return }
+                settings.cardPlacement = placement
+                try await settingsStore.write(settings)
+                NotificationCenter.default.post(name: .kanbanCodeSettingsChanged, object: nil)
+            } catch {}
+        }
+    }
+
     /// Binding for the view mode picker: List is expanded+sidebar, Kanban
     /// and Triage are the boards shown outside it.
     private var viewModePickerBinding: Binding<BoardViewMode?> {
@@ -1781,6 +1821,9 @@ struct ContentView: View {
                 if tbVis.showViewModePicker {
                     ToolbarItem(placement: .navigation) {
                         viewModePicker
+                    }
+                    ToolbarItem(placement: .navigation) {
+                        cardPlacementMenu
                     }
                 }
 
