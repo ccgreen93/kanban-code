@@ -67,13 +67,15 @@ public enum SidebarLayout {
     /// stays as the place to drop and refresh tasks. `columns` are the
     /// column sections in order (`columns(forBoardOrder:)`). Without
     /// `showsLive` (free placement) there is no Live section: every card is
-    /// listed in its column, running or not.
+    /// listed in its column, running or not. With `showsEmptyColumns` (free
+    /// placement) every listed column shows, so each one takes drops.
     public static func sections(
         agents: [KanbanCodeCard] = [],
         pinned: [KanbanCodeCard],
         cardsByColumn: [KanbanCodeColumn: [KanbanCodeCard]],
         columns: [KanbanCodeColumn] = columnOrder,
         showsLive: Bool = true,
+        showsEmptyColumns: Bool = false,
         isLive: (KanbanCodeCard) -> Bool,
         isBusy: (KanbanCodeCard) -> Bool
     ) -> [SidebarSection] {
@@ -91,7 +93,7 @@ public enum SidebarLayout {
         let liveIds = Set(live.map(\.id))
         for column in columns {
             let cards = (cardsByColumn[column] ?? []).filter { !liveIds.contains($0.id) }
-            if !cards.isEmpty || column == .backlog {
+            if !cards.isEmpty || column == .backlog || showsEmptyColumns {
                 out.append(SidebarSection(kind: .column(column), cards: cards))
             }
         }

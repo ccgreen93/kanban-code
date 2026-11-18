@@ -706,6 +706,7 @@ public final class AppState: @unchecked Sendable {
             cardsByColumn: newByColumn.mapValues { $0.filter { !$0.link.isPinned && !$0.link.isAgent } },
             columns: SidebarLayout.columns(forBoardOrder: columnOrder),
             showsLive: cardPlacement == .strict,
+            showsEmptyColumns: cardPlacement == .free,
             isLive: { liveIds.contains($0.id) },
             isBusy: { $0.activityState == .activelyWorking || $0.link.isLaunching == true }
         )

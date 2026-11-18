@@ -106,19 +106,29 @@ struct CardPlacementSidebarTests {
         #expect(s.first { $0.kind == .column(.backlog) }?.cards.isEmpty == true)
     }
 
-    @Test("The default column setting keeps the list's original order")
-    func defaultOrderUnchanged() {
-        #expect(SidebarLayout.columns(forBoardOrder: KanbanCodeColumn.allCases) == [.waiting, .inProgress, .inReview, .done, .backlog])
-        let kinds = sections(.free).map(\.kind)
-        #expect(kinds == [.column(.waiting), .column(.done), .column(.backlog)])
+    @Test("Strict, default columns: Live first, then only the columns with cards, Backlog always")
+    func strictSections() {
+        #expect(sections(.strict).map(\.kind) == [.live, .column(.done), .column(.backlog)])
     }
 
-    @Test("A custom column setting sets the list's order and hides its hidden columns")
+    @Test("Free, default columns: no Live, and every column in the original list order, empty or not")
+    func freeSections() {
+        #expect(SidebarLayout.columns(forBoardOrder: KanbanCodeColumn.allCases) == [.waiting, .inProgress, .inReview, .done, .backlog])
+        #expect(sections(.free).map(\.kind) == [
+            .column(.waiting), .column(.inProgress), .column(.inReview), .column(.done), .column(.backlog),
+        ])
+        #expect(sections(.free).first { $0.kind == .column(.inProgress) }?.cards.isEmpty == true)
+    }
+
+    @Test("A custom column setting sets the list's order and leaves hidden columns out, in both modes")
     func customOrderAndHidden() {
         let order: [KanbanCodeColumn] = [.backlog, .waiting, .inProgress, .inReview, .allSessions]
         #expect(SidebarLayout.columns(forBoardOrder: order) == [.backlog, .waiting, .inProgress, .inReview])
-        // Done is hidden, so its card is not listed; empty columns stay out, Backlog stays.
-        #expect(sections(.free, order: order).map(\.kind) == [.column(.backlog), .column(.waiting)])
+        // Done is hidden, so its card is not listed.
+        #expect(sections(.free, order: order).map(\.kind) == [
+            .column(.backlog), .column(.waiting), .column(.inProgress), .column(.inReview),
+        ])
+        #expect(sections(.strict, order: order).map(\.kind) == [.live, .column(.backlog)])
         #expect(SidebarLayout.columns(forBoardOrder: [.allSessions]) == SidebarLayout.columnOrder)
     }
 }
