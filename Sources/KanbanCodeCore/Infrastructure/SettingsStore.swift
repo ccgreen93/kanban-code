@@ -15,6 +15,8 @@ public struct Settings: Codable, Sendable {
     public var promptTemplate: String
     public var githubIssuePromptTemplate: String
     public var columnOrder: [KanbanCodeColumn]
+    /// Strict (pull-request based) or free card placement.
+    public var cardPlacement: CardPlacementMode
     public var hasCompletedOnboarding: Bool
     public var defaultAssistant: CodingAssistant?
     public var enabledAssistants: [CodingAssistant]
@@ -53,6 +55,7 @@ public struct Settings: Codable, Sendable {
         promptTemplate: String = "",
         githubIssuePromptTemplate: String = "#${number}: ${title}\n\n${body}",
         columnOrder: [KanbanCodeColumn] = KanbanCodeColumn.allCases,
+        cardPlacement: CardPlacementMode = .strict,
         hasCompletedOnboarding: Bool = false,
         defaultAssistant: CodingAssistant? = nil,
         enabledAssistants: [CodingAssistant] = CodingAssistant.allCases,
@@ -78,6 +81,7 @@ public struct Settings: Codable, Sendable {
         self.promptTemplate = promptTemplate
         self.githubIssuePromptTemplate = githubIssuePromptTemplate
         self.columnOrder = columnOrder
+        self.cardPlacement = cardPlacement
         self.hasCompletedOnboarding = hasCompletedOnboarding
         self.defaultAssistant = defaultAssistant
         self.enabledAssistants = enabledAssistants
@@ -95,7 +99,7 @@ public struct Settings: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case projects, globalView, github, notifications, remote, remoteMode, boxd, sessionTimeout
-        case promptTemplate, githubIssuePromptTemplate, columnOrder, hasCompletedOnboarding, defaultAssistant
+        case promptTemplate, githubIssuePromptTemplate, columnOrder, cardPlacement, hasCompletedOnboarding, defaultAssistant
         case enabledAssistants
         case apiServices, defaultAPIServiceIds
         case selfCompact, subagents, assistantCommands, assistantRuntimes, remoteControl, peers
@@ -137,6 +141,7 @@ public struct Settings: Codable, Sendable {
         githubIssuePromptTemplate = (try? container.decodeIfPresent(String.self, forKey: .githubIssuePromptTemplate))
             ?? "#${number}: ${title}\n\n${body}"
         columnOrder = (try? container.decodeIfPresent([KanbanCodeColumn].self, forKey: .columnOrder)) ?? KanbanCodeColumn.allCases
+        cardPlacement = (try? container.decodeIfPresent(CardPlacementMode.self, forKey: .cardPlacement)) ?? .strict
         hasCompletedOnboarding = (try? container.decodeIfPresent(Bool.self, forKey: .hasCompletedOnboarding)) ?? false
         defaultAssistant = try? container.decodeIfPresent(CodingAssistant.self, forKey: .defaultAssistant)
         // Assistants written by a newer version of the app (or a future CLI)
@@ -184,6 +189,7 @@ public struct Settings: Codable, Sendable {
         try container.encode(promptTemplate, forKey: .promptTemplate)
         try container.encode(githubIssuePromptTemplate, forKey: .githubIssuePromptTemplate)
         try container.encode(columnOrder, forKey: .columnOrder)
+        try container.encode(cardPlacement, forKey: .cardPlacement)
         try container.encode(hasCompletedOnboarding, forKey: .hasCompletedOnboarding)
         try container.encodeIfPresent(defaultAssistant, forKey: .defaultAssistant)
         try container.encode(enabledAssistants, forKey: .enabledAssistants)

@@ -12,7 +12,8 @@ public enum UpdateCardColumn {
         link: inout Link,
         activityState: ActivityState?,
         hasWorktree: Bool,
-        hasLiveSession: Bool
+        hasLiveSession: Bool,
+        placement: CardPlacementMode = .strict
     ) {
         let hasPR = !link.prLinks.isEmpty
         let allPRsDone = link.allPRsDone
@@ -23,7 +24,8 @@ public enum UpdateCardColumn {
             hasPR: hasPR,
             allPRsDone: allPRsDone,
             hasWorktree: hasWorktree,
-            hasLiveSession: hasLiveSession
+            hasLiveSession: hasLiveSession,
+            placement: placement
         )
 
         // If an archived card becomes live again, clear the archive flag so it

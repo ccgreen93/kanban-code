@@ -173,6 +173,7 @@ struct ListBoardView: View {
         ListCardRowView(
             card: card,
             isSelected: store.state.highlightsCardRow(card.id),
+            showsLiveDot: store.state.cardPlacement == .free && store.state.isLive(card),
             onCopyConversationMarkdown: { onCopyConversationMarkdown(card.id) },
             subagentCount: descendantCounts[card.id] ?? 0,
             activeDirectSubagentCount: activeSubagentCardsByParent[card.id]?.count ?? 0,
@@ -597,6 +598,7 @@ private struct ListBoardSectionView: View {
         ListCardRowView(
             card: card,
             isSelected: card.id == selectedCardId,
+            showsLiveDot: state.cardPlacement == .free && state.isLive(card),
             onCopyConversationMarkdown: { onCopyConversationMarkdown(card.id) },
             subagentCount: descendantCounts[card.id] ?? 0,
             activeDirectSubagentCount: subagentsByParent[card.id]?.count ?? 0,
@@ -832,6 +834,9 @@ private func conversationRows(for cardId: String, in state: AppState) -> some Vi
 private struct ListCardRowView: View {
     let card: KanbanCodeCard
     let isSelected: Bool
+    /// Free placement lists no Live section, so a running session shows as
+    /// a dot on its row.
+    var showsLiveDot: Bool = false
     let onCopyConversationMarkdown: () -> Void
     let subagentCount: Int
     let activeDirectSubagentCount: Int
@@ -906,6 +911,11 @@ private struct ListCardRowView: View {
             if card.showSpinner {
                 ProgressView()
                     .controlSize(.small)
+            } else if showsLiveDot {
+                Circle()
+                    .fill(SidebarSectionKind.live.accentColor)
+                    .frame(width: 7, height: 7)
+                    .help("Session running")
             } else if card.showsStartButton {
                 Button(action: onStart) {
                     Image(systemName: "play.fill")

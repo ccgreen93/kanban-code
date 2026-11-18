@@ -10,9 +10,23 @@ struct BoardColumnsSettingsSection: View {
     }
 
     @State private var rows: [Row] = []
+    @State private var placement: CardPlacementMode = .strict
     private let settingsStore = SettingsStore()
 
     var body: some View {
+        Section("Card Placement") {
+            Picker("Moving cards", selection: $placement) {
+                Text("Strict").tag(CardPlacementMode.strict)
+                Text("Free").tag(CardPlacementMode.free)
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: placement) { _, newValue in savePlacement(newValue) }
+            Text(placement == .strict
+                 ? "Columns follow the session and its pull requests. In Review needs a PR, Done a merged PR, dropping into In Progress starts or resumes the card, and a working card moves back to In Progress."
+                 : "Drop any card into any column and it stays there while its session works, until you launch, resume or drag it again. All Sessions still archives.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
         Section("Board Columns") {
             ForEach(Array(rows.enumerated()), id: \.element.column) { index, row in
                 HStack {
@@ -45,8 +59,29 @@ struct BoardColumnsSettingsSection: View {
             }
         }
         .task {
-            let order = (try? await settingsStore.read())?.columnOrder ?? KanbanCodeColumn.allCases
-            rows = Self.rows(for: order)
+            let settings = try? await settingsStore.read()
+            rows = Self.rows(for: settings?.columnOrder ?? KanbanCodeColumn.allCases)
+            placement = settings?.cardPlacement ?? .strict
+        }
+        // The toolbar toggle changes the mode too.
+        .onReceive(NotificationCenter.default.publisher(for: .kanbanCodeSettingsChanged).receive(on: RunLoop.main)) { _ in
+            Task {
+                if let saved = (try? await settingsStore.read())?.cardPlacement, saved != placement {
+                    placement = saved
+                }
+            }
+        }
+    }
+
+    private func savePlacement(_ newValue: CardPlacementMode) {
+        Task {
+            do {
+                var settings = try await settingsStore.read()
+                guard settings.cardPlacement != newValue else { return }
+                settings.cardPlacement = newValue
+                try await settingsStore.write(settings)
+                NotificationCenter.default.post(name: .kanbanCodeSettingsChanged, object: nil)
+            } catch {}
         }
     }
 

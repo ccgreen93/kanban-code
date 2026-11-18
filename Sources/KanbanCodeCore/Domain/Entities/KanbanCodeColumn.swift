@@ -38,3 +38,14 @@ public enum KanbanCodeColumn: String, Codable, CaseIterable, Sendable {
         return visible
     }
 }
+
+/// How cards move between lanes (Settings > General > Board).
+public enum CardPlacementMode: String, Codable, CaseIterable, Sendable {
+    /// The original rules: drops into In Progress start or resume the card,
+    /// In Review needs a pull request, Done a merged one, and session
+    /// activity moves a card back to the lane it implies.
+    case strict
+    /// Any card can be dropped into any lane, and it stays there while its
+    /// session works, until it is launched, resumed or dragged again.
+    case free
+}

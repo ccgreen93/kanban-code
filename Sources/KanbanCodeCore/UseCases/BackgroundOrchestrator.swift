@@ -188,9 +188,11 @@ public final class BackgroundOrchestrator: @unchecked Sendable {
             let hasWorktree = links[idx].worktreeLink?.branch != nil
             // This path has no tmux listing; never revive an archived card
             // from here — the reconcile pass does that with real liveness.
+            let placement = (try? await SettingsStore().read())?.cardPlacement ?? .strict
             UpdateCardColumn.update(
                 link: &links[idx], activityState: activityState,
-                hasWorktree: hasWorktree, hasLiveSession: false)
+                hasWorktree: hasWorktree, hasLiveSession: false,
+                placement: placement)
 
             links[idx].updatedAt = .now
             try await coordinationStore.writeLinks(links)
