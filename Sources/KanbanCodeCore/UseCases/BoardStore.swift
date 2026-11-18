@@ -191,6 +191,8 @@ public final class AppState: @unchecked Sendable {
     public var columnOrder: [KanbanCodeColumn] = KanbanCodeColumn.allCases {
         didSet { if columnOrder != oldValue { cardInputsVersion &+= 1 } }
     }
+    /// Strict or free card placement, from Settings.
+    public var cardPlacement: CardPlacementMode = .strict
     /// `excludedPaths`, compiled.
     public private(set) var pathExclusion: PathExclusion = .none
     /// Project paths discovered from sessions but not yet configured.
@@ -925,6 +927,8 @@ public enum Action: Sendable {
     case settingsLoaded(projects: [Project], excludedPaths: [String], remote: RemoteSettings?, remoteMode: RemoteMode = .boxd, boxd: BoxdSettings? = nil)
     /// The board's column order and visibility, from Settings.
     case columnOrderLoaded([KanbanCodeColumn])
+    /// Strict or free card placement, from Settings.
+    case cardPlacementLoaded(CardPlacementMode)
     case setError(String?)
     /// A prompt sent from the card's chat did not reach its session.
     case promptSendFailed(cardId: String, prompt: QueuedPrompt, message: String)
@@ -2970,7 +2974,13 @@ public enum Reducer {
 
                 // Clear manual column override when we have definitive data.
                 // Backlog is sticky — the user explicitly parked this card.
-                if link.manualOverrides.column && link.column != .backlog {
+                // Free placement keeps every lane; only a dead terminal
+                // link is dropped.
+                if link.manualOverrides.column && link.column != .backlog && state.cardPlacement == .free {
+                    if (activity == nil || activity == .stale) && link.tmuxLink != nil && !hasTmux {
+                        link.tmuxLink = nil
+                    }
+                } else if link.manualOverrides.column && link.column != .backlog {
                     if activity != nil && activity != .stale {
                         link.manualOverrides.column = false
                     } else if link.tmuxLink != nil && !hasTmux {
@@ -2983,7 +2993,8 @@ public enum Reducer {
                     link: &link,
                     activityState: activity,
                     hasWorktree: hasWorktree || hasTmux,
-                    hasLiveSession: hasTmux
+                    hasLiveSession: hasTmux,
+                    placement: state.cardPlacement
                 )
 
                 // Copy session's firstPrompt into link.promptBody
@@ -3045,7 +3056,8 @@ public enum Reducer {
                 let oldColumn = link.column
                 UpdateCardColumn.update(
                     link: &link, activityState: activity,
-                    hasWorktree: hasWorktree, hasLiveSession: hasLiveSession)
+                    hasWorktree: hasWorktree, hasLiveSession: hasLiveSession,
+                    placement: state.cardPlacement)
                 if link.column != oldColumn {
                     state.links[id] = link
                     changed = true
@@ -3080,6 +3092,10 @@ public enum Reducer {
 
         case .columnOrderLoaded(let order):
             state.columnOrder = order
+            return []
+
+        case .cardPlacementLoaded(let placement):
+            state.cardPlacement = placement
             return []
 
         // MARK: Remote machines
@@ -3657,6 +3673,7 @@ public final class BoardStore: @unchecked Sendable {
                     boxd: settings.boxd
                 ))
                 dispatch(.columnOrderLoaded(settings.columnOrder))
+                dispatch(.cardPlacementLoaded(settings.cardPlacement))
             }
         }
         // Also load cached links so cards appear instantly

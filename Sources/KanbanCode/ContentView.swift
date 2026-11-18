@@ -359,7 +359,7 @@ struct ContentView: View {
             },
             onRefreshBacklog: { Task { await store.refreshBacklog() } },
             canDropCard: { card, column in
-                CardDropIntent.resolve(card, to: column).isAllowed
+                CardDropIntent.resolve(card, to: column, placement: store.state.cardPlacement).isAllowed
             },
             onDropCard: { cardId, column in handleDrop(cardId: cardId, to: column) },
             onMergeCards: { sourceId, targetId in
@@ -457,7 +457,7 @@ struct ContentView: View {
                 store.dispatch(.mergeCards(sourceId: sourceId, targetId: targetId))
             },
             canDropCard: { card, column in
-                CardDropIntent.resolve(card, to: column).isAllowed
+                CardDropIntent.resolve(card, to: column, placement: store.state.cardPlacement).isAllowed
             },
             onNewTask: { showNewTask = true },
             onCardClicked: { cardId in
@@ -3161,7 +3161,7 @@ struct ContentView: View {
 
     private func handleDrop(cardId: String, to column: KanbanCodeColumn) {
         guard let card = store.state.cards.first(where: { $0.id == cardId }) else { return }
-        switch CardDropIntent.resolve(card, to: column) {
+        switch CardDropIntent.resolve(card, to: column, placement: store.state.cardPlacement) {
         case .start:
             startCard(cardId: cardId)
         case .resume:

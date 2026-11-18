@@ -14,7 +14,16 @@ enum CardDropIntent: Equatable {
         return true
     }
 
-    static func resolve(_ card: KanbanCodeCard, to column: KanbanCodeColumn) -> CardDropIntent {
+    static func resolve(
+        _ card: KanbanCodeCard,
+        to column: KanbanCodeColumn,
+        placement: CardPlacementMode = .strict
+    ) -> CardDropIntent {
+        // Free placement: every lane takes every card, and a drop only
+        // moves it. All Sessions is the archive in both modes.
+        if placement == .free {
+            return column == .allSessions ? .archive : .move
+        }
         switch column {
         case .inProgress:
             if card.link.tmuxLink != nil {

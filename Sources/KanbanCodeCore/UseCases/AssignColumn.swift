@@ -13,12 +13,21 @@ public enum AssignColumn {
         hasPR: Bool = false,
         allPRsDone: Bool = false,
         hasWorktree: Bool = false,
-        hasLiveSession: Bool = false
+        hasLiveSession: Bool = false,
+        placement: CardPlacementMode = .strict
     ) -> KanbanCodeColumn {
         // A headless run (`claude -p` from a script) that no card claims is
         // reachable in All Sessions only, whatever its activity says.
         if link.isUnclaimedHeadless {
             return .allSessions
+        }
+
+        // Free placement: a lane the user put the card in is theirs,
+        // whatever its session or pull requests do. Launch and resume clear
+        // the placement; the archive keeps its own rules.
+        if placement == .free, link.manualOverrides.column,
+           !link.manuallyArchived, link.column != .allSessions {
+            return link.column
         }
 
         // Manual backlog override is sticky: the card was parked, or brought

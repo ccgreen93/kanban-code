@@ -72,3 +72,31 @@ struct CardDropIntentTests {
         #expect(CardDropIntent.resolve(card, to: .backlog) == .move)
     }
 }
+
+@Suite("Card Drop Intent: free placement")
+struct CardDropIntentFreeTests {
+    private func card(column: KanbanCodeColumn, running: Bool = false) -> KanbanCodeCard {
+        KanbanCodeCard(link: Link(
+            id: "card_1", name: "Some task", projectPath: "/test/project",
+            column: column, source: .manual,
+            tmuxLink: running ? TmuxLink(sessionName: "project-card_1") : nil
+        ))
+    }
+
+    @Test("Any card moves into any lane, with no pull request or session required")
+    func anyCardAnyLane() {
+        let lanes: [KanbanCodeColumn] = [.backlog, .inProgress, .waiting, .inReview, .done]
+        for from in lanes {
+            for to in lanes {
+                #expect(CardDropIntent.resolve(card(column: from), to: to, placement: .free) == .move)
+                #expect(CardDropIntent.resolve(card(column: from, running: true), to: to, placement: .free) == .move)
+            }
+        }
+    }
+
+    @Test("Dropping into In Progress only moves the card; All Sessions still archives")
+    func inProgressMovesAllSessionsArchives() {
+        #expect(CardDropIntent.resolve(card(column: .backlog), to: .inProgress, placement: .free) == .move)
+        #expect(CardDropIntent.resolve(card(column: .waiting), to: .allSessions, placement: .free) == .archive)
+    }
+}
