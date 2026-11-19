@@ -1,93 +1,74 @@
-# Handoff: card roles (unfinished)
+# Handoff: card roles (in progress)
 
-Branch `feat/roles`, cut from `cg-main` on 2026-11-17. This is a design
-note only; no code has been written yet. It is for a Claude session on
-Chris's machine that has the work role-pipeline tool installed, which is
-where the role definitions live.
+Card roles are being built on the fork in steps, each a PR into `cg-main`.
+The user-facing doc is [`docs/roles.md`](roles.md); this note keeps the
+decisions and what is left.
 
 ## ⚠️ This repo is public
 
 `ccgreen93/kanban-code` is a public fork. **Do not commit anything copied
-from the work tool**: not its role instructions or prompts, not its name,
-not ticket keys, repo names or anything else from work. Ask Chris for the
-tool's name if you don't know it.
+from the work tool** that inspired this: not its role instructions or
+prompts, not its name, not ticket keys, repo names or anything else from
+work.
 
 - Real role definitions live **outside the repo** in `~/.kanban-code/roles/`.
 - The repo only gets the loader and generic example roles written from
-  scratch (`docs/roles.md` plus a sample like `examples/roles/build.md`).
+  scratch (`docs/roles/examples/`).
 
 ## Goal
 
-The work tool runs "roles": each is a worker session with a preset model,
-effort and instructions, and roles hand work to each other. Chris wants
-the same in Kanban Code, lined up with the board's columns, with Linear
-as the issue source for value3 (instead of Jira at work). Use BMAD skills
-where they fit.
+Each role is a worker session with a preset model, effort and
+instructions, and roles hand work to each other. Line them up with the
+board's columns, use BMAD skills where they fit, and (for value3) take
+issues from Linear.
 
-Roles (generic names, from Chris's screenshot):
+## Decisions (agreed 2026-11-19)
 
-| Role | Model / effort | Typical next | BMAD skill |
-|---|---|---|---|
-| triage | sonnet / medium | spec, build, build-lite, pr-review | none |
-| adhoc | sonnet / medium | build, build-lite | none |
-| spec | opus / high | build | `bmad-spec` |
-| build-lite | sonnet / high | review | `bmad-build` (light) |
-| build | opus / high | review | `bmad-build` |
-| review | opus / high | merge | `bmad-code-review` |
-| merge | none | — | none |
-| pr-review, pr-watch (side roles) | ? | — | `bmad-code-review`, CI watcher |
+1. **The role is a card field (`Link.role`); columns stay automatic** in
+   strict placement. In **free placement** a hand-off moves the card to
+   the next role's `column` (triage → Backlog; spec, build-lite, build →
+   In Progress; review → In Review; merge → Done).
+2. **The worker triggers hand-offs** (`kanban role handoff`); the human
+   approves only `ask` edges.
+3. **One card per work item**, roles in sequence on it; subagents only for
+   side work.
+4. **A fresh session per role** to start with; same-session hand-off
+   (model switch plus self-compact) maybe later.
+5. **Gates are opt-in per role**. Day one: `git push`, PR open, comment,
+   review and resolve, ticket writes. `gh pr merge` is always denied.
+6. **No LLM supervisor**: rules in the daemon plus the Triage view.
+7. **One `transitions.json`**, not `next` in each role file, with `auto`
+   or `ask` per edge.
+8. Triage is the role imported cards start in; adhoc is for manual tasks
+   with no ticket.
 
-Chris's column mapping: triage ≈ Backlog + In Progress; spec, build-lite
-and build are In Progress; review is In Review; merge is Done.
+## Steps
 
-## Proposed design (not yet agreed with Chris)
+1. **Done (branch `cg/roles`):** role loader (`RoleLibrary`, `Role`,
+   `RoleTransitions`), `Link.role` (synced and kept by the reconciler),
+   role picker in the New Task dialog that fills model, effort and
+   assistant, role instructions put ahead of the task at launch
+   (`PromptBuilder.wrap`), badge on cards, `role:` and `effort:` in
+   `kanban list/show`, generic example roles.
+2. `kanban role handoff <next> "summary"`: validate against the map, end
+   the session, relaunch the same card with the next role's model, effort
+   and instructions plus the summary; move the column in free placement.
+3. `ask` edges as `AttentionRequest`s answered in the Triage view.
+4. Gates in the `PreToolUse` Bash hook (`VaultHook` is the precedent):
+   deny with "report your draft and stop", released once from Triage.
+5. Rules for unresolved review threads, failing CI and conflicts, as
+   queued prompts from the daemon, each firing once per condition.
+6. Linear as `LinkSource.linearIssue` (separate track), key in `kv`.
 
-**Columns stay automatic. The role is a separate field.** Columns are
-worked out from session activity in
-`Sources/KanbanCodeCore/UseCases/AssignColumn.swift`: a running turn goes
-to In Progress, idle goes to Waiting, a PR goes to In Review, and a
-merged PR goes to Done. If roles became columns, an idle build session
-would jump to Waiting and lose its stage. So:
+## Still open
 
-1. **Role files:** `~/.kanban-code/roles/<name>.md`. The frontmatter holds
-   `model`, `effort`, `skill` and `next: [roles]`; the body holds the
-   instructions.
-2. **On the card:** a `role: String?` field on `Link`
-   (`Domain/Entities/Link.swift`). It sets the existing `modelOverride`
-   and `effortOverride` (`effortOverride` landed in 3160fbd, "pick model
-   and effort in the new task dialog"). The card shows a role badge, and
-   In Progress can group cards by role, like the work tool's pipeline
-   view.
-3. **Handoff:** `kanban role handoff <next> "summary"`. It checks `next`,
-   ends the current session and relaunches **the same card** with a fresh
-   session: the next role's model and effort, and a prompt of its
-   instructions plus the handoff summary. One card per ticket, with a
-   clean context for each stage. A role picker in the new-task dialog and
-   on the card belongs here too.
-4. **Linear (value3 project only):** a new `LinkSource.linearIssue`
-   alongside the GitHub-issue import (`GhCliAdapter.fetchIssues`,
-   `githubIssuePromptTemplate`). Linear issues come in as Backlog cards,
-   and role changes update the Linear status. The API key goes in the
-   vault (`kv`), never in a file.
+- What pr-watch should become once step 5's rules exist (probably
+  replaced by them).
+- Whether the role picker should also live on the card (change role
+  without a hand-off).
+- `singleton` is parsed but not enforced.
 
-## Open questions for Chris
-
-- Triage covers two columns. Is it just the role that cards start in?
-- What exactly does pr-watch do (CI, review comments, merge readiness)?
-- Who triggers a handoff: the agent itself, Chris, or either?
-- Does the same card keep its history across roles (proposed), or does
-  each role get its own child card?
-
-## Next steps
-
-1. Read the role definitions from the work tool on this machine. Turn
-   them into `~/.kanban-code/roles/*.md` **locally**, with no commit.
-2. Go through the open questions with Chris, then write the spec (use
-   `bmad-spec`). Put the spec outside this public repo, or keep it free
-   of anything from work.
-3. Build on this branch and merge into `cg-main`. This is a personal
-   feature, not an upstream PR.
-
-Build and test without Xcode: see the `swift test` flags in the fork's
-setup notes (`-F <CLT>/Library/Developer/Frameworks` plus rpaths). On a
-machine with Xcode, plain `swift test` works.
+Build and test without Xcode: `swift test` with
+`-Xswiftc -F<CLT>/Library/Developer/Frameworks` plus rpaths to that folder
+and `<CLT>/Library/Developer/usr/lib`, where
+`CLT=/Library/Developer/CommandLineTools`.

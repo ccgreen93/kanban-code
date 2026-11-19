@@ -1,0 +1,11 @@
+{
+  "triage": ["spec", "build-lite", "build", "adhoc"],
+  "adhoc": ["build-lite", "build"],
+  "spec": ["build"],
+  "build-lite": [{ "role": "review", "mode": "auto" }, "build"],
+  "build": [{ "role": "review", "mode": "auto" }, "triage"],
+  "review": ["build", "merge"],
+  "merge": [],
+  "pr-review": [],
+  "pr-watch": ["review"]
+}
