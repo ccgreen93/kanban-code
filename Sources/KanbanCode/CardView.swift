@@ -155,6 +155,26 @@ struct CardView: View {
     }
 }
 
+// MARK: - Role
+
+/// The role the card's worker plays, as a small outlined capsule so it never
+/// reads as a status colour.
+struct RoleBadge: View {
+    let role: String
+
+    var body: some View {
+        Text(role)
+            .font(.app(size: 9, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Color.secondary.opacity(0.4), lineWidth: 1))
+            .help("Role: \(role)")
+            .accessibilityLabel("Role \(role)")
+    }
+}
+
 // MARK: - Priority + Status
 
 extension CardPriority {
@@ -473,6 +493,10 @@ struct CardBadgesRow: View {
     let card: KanbanCodeCard
 
     var body: some View {
+        if let role = card.link.role {
+            RoleBadge(role: role)
+        }
+
         // Session indicator. A lone assistant session is the normal case, so it
         // shows the assistant's own icon; the green terminal is reserved for
         // extra terminals the user opened alongside it.

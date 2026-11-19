@@ -52,7 +52,7 @@ extension MasterEngine {
             let project = settings?.projects.first(where: { $0.path == projectPath })
             var link = link
             link.promptBody = await PromptPreview.fullPrompt(for: link)
-            var prompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings)
+            var prompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings, role: RoleLibrary.load().role(named: link.role))
             if prompt.isEmpty { prompt = link.promptBody ?? link.name ?? "" }
             let isGitRepo = FileManager.default.fileExists(atPath: (projectPath as NSString).appendingPathComponent(".git"))
             let worktreeName = (isGitRepo && assistant.supportsWorktree) ? worktree : nil

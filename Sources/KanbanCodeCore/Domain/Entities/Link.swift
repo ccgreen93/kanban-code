@@ -217,6 +217,11 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
     /// Optional reasoning effort selected for this card (`--effort` for Claude).
     public var effortOverride: String?
 
+    /// Name of the role this card's worker plays (a file in
+    /// `~/.kanban-code/roles/`). Separate from the column, which follows
+    /// activity unless the board uses free placement.
+    public var role: String?
+
     /// Optional first self-compact nudge threshold selected for this card.
     /// When set, it replaces the global rules and forces `/compact` 200k later.
     public var selfCompactContextThresholdTokens: Int?
@@ -559,7 +564,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         // Card-level
         case id, name, projectPath, column, createdAt, updatedAt, lastActivity, lastOpenedAt
-        case manualOverrides, manuallyArchived, source, promptBody, promptImagePaths, parentCardId, modelOverride, effortOverride
+        case manualOverrides, manuallyArchived, source, promptBody, promptImagePaths, parentCardId, modelOverride, effortOverride, role
         case selfCompactContextThresholdTokens
         case isRemote, remote, isLaunching, launchedAt, sortOrder, pinnedAt, pinnedSortOrder, priority, agentAt
         case discoveredBranches, discoveredRepos, assistant, apiServiceId, headless
@@ -591,6 +596,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         parentCardId = try c.decodeIfPresent(String.self, forKey: .parentCardId)
         modelOverride = try c.decodeIfPresent(String.self, forKey: .modelOverride)
         effortOverride = try c.decodeIfPresent(String.self, forKey: .effortOverride)
+        role = try c.decodeIfPresent(String.self, forKey: .role)
         selfCompactContextThresholdTokens = try c.decodeIfPresent(Int.self, forKey: .selfCompactContextThresholdTokens)
         isRemote = try c.decodeIfPresent(Bool.self, forKey: .isRemote) ?? false
         remote = try? c.decodeIfPresent(RemoteLink.self, forKey: .remote)
@@ -703,6 +709,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         try c.encodeIfPresent(parentCardId, forKey: .parentCardId)
         try c.encodeIfPresent(modelOverride, forKey: .modelOverride)
         try c.encodeIfPresent(effortOverride, forKey: .effortOverride)
+        try c.encodeIfPresent(role, forKey: .role)
         try c.encodeIfPresent(selfCompactContextThresholdTokens, forKey: .selfCompactContextThresholdTokens)
         try c.encode(isRemote, forKey: .isRemote)
         try c.encodeIfPresent(remote, forKey: .remote)

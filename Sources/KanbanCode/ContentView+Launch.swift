@@ -19,7 +19,7 @@ extension ContentView {
             let project = settings?.projects.first(where: { $0.path == (card.link.projectPath ?? effectivePath) })
             var link = card.link
             link.promptBody = await PromptPreview.fullPrompt(for: link, transcriptPath: card.session?.jsonlPath)
-            var prompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings)
+            var prompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings, role: RoleLibrary.load().role(named: link.role))
             if prompt.isEmpty {
                 prompt = link.promptBody ?? link.name ?? ""
             }

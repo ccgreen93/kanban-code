@@ -47,6 +47,7 @@ public enum LinkSync {
         SharedField("parentCardId", \.parentCardId),
         SharedField("modelOverride", \.modelOverride),
         SharedField("effortOverride", \.effortOverride),
+        SharedField("role", \.role),
         SharedField("selfCompactContextThresholdTokens", \.selfCompactContextThresholdTokens),
         SharedField("prLinks", \.prLinks),
         SharedField("issueLink", \.issueLink),

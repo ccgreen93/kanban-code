@@ -11,7 +11,8 @@ public enum PromptBuilder {
     public static func buildPrompt(
         card link: Link,
         project: Project? = nil,
-        settings: Settings? = nil
+        settings: Settings? = nil,
+        role: Role? = nil
     ) -> String {
         var prompt: String
 
@@ -43,7 +44,25 @@ public enum PromptBuilder {
             }
         }
 
+        if let role {
+            prompt = wrap(prompt.trimmingCharacters(in: .whitespacesAndNewlines), in: role)
+        }
+
         return prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Puts the role's instructions ahead of the task, so a fresh worker
+    /// reads its role first and the task last.
+    /// A prompt that already starts with the role header (for example one
+    /// recovered from the transcript on relaunch) is left as it is.
+    public static func wrap(_ task: String, in role: Role) -> String {
+        let header = "# Role: \(role.name)"
+        if task.hasPrefix(header) { return task }
+        var parts = [header]
+        if let description = role.description { parts.append(description) }
+        if !role.body.isEmpty { parts.append(role.body) }
+        parts.append("# Task\n\n\(task)")
+        return parts.joined(separator: "\n\n")
     }
 
     /// Replace `${key}` placeholders with values from the variables dictionary.
