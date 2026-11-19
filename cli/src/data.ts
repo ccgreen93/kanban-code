@@ -848,6 +848,8 @@ export function toCardSummary(
     project: projectName(link),
     assistant: link.assistant,
     modelOverride: link.modelOverride,
+    effortOverride: link.effortOverride,
+    role: link.role,
     selfCompactContextThresholdTokens: link.selfCompactContextThresholdTokens,
     sessionId: link.sessionLink?.sessionId,
     tmuxSession: tmuxName,

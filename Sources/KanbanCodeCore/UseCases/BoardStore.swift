@@ -2813,6 +2813,7 @@ public enum Reducer {
                     link.parentCardId = existing.parentCardId
                     link.modelOverride = existing.modelOverride
                     link.effortOverride = existing.effortOverride
+                    link.role = existing.role
                     link.selfCompactContextThresholdTokens = existing.selfCompactContextThresholdTokens
                     // The machine record is written by the supervisor, never
                     // by the reconciler. A snapshot taken before the machine

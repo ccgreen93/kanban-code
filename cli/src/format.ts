@@ -66,7 +66,9 @@ export function formatCardSummary(card: CardSummary): string {
   const meta: string[] = [];
   if (card.subagentDepth !== undefined) meta.push(`depth:${card.subagentDepth}`);
   if (card.assistant) meta.push(card.assistant);
+  if (card.role) meta.push(`role:${card.role}`);
   if (card.modelOverride) meta.push(`model:${card.modelOverride}`);
+  if (card.effortOverride) meta.push(`effort:${card.effortOverride}`);
   if (card.selfCompactContextThresholdTokens) {
     meta.push(`compact:${formatCompactThreshold(card.selfCompactContextThresholdTokens)}`);
   }

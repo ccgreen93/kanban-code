@@ -128,6 +128,8 @@ export interface Link {
   promptImagePaths?: string[];
   parentCardId?: string;
   modelOverride?: string;
+  effortOverride?: string;
+  role?: string;
   selfCompactContextThresholdTokens?: number;
   sessionLink?: SessionLink;
   tmuxLink?: TmuxLink;
@@ -196,6 +198,8 @@ export interface CardSummary {
   project?: string;
   assistant?: CodingAssistant;
   modelOverride?: string;
+  effortOverride?: string;
+  role?: string;
   selfCompactContextThresholdTokens?: number;
   subagentDepth?: number;
   sessionId?: string;

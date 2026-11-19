@@ -1038,11 +1038,11 @@ struct ContentView: View {
                     globalRemoteSettings: store.state.globalRemoteSettings,
                     remoteOptions: remoteLaunchOptions(cardId: nil),
                     enabledAssistants: assistantRegistry.available,
-                    onCreate: { prompt, projectPath, title, startImmediately, images in
-                        createManualTask(prompt: prompt, projectPath: projectPath, title: title, startImmediately: startImmediately, images: images)
+                    onCreate: { prompt, projectPath, title, startImmediately, images, role in
+                        createManualTask(prompt: prompt, projectPath: projectPath, title: title, startImmediately: startImmediately, images: images, role: role)
                     },
-                    onCreateAndLaunch: { prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort in
-                        createManualTaskAndLaunch(prompt: prompt, projectPath: projectPath, title: title, createWorktree: createWorktree, runRemotely: runRemotely, skipPermissions: skipPermissions, commandOverride: commandOverride, images: images, assistant: assistant, apiServiceId: apiServiceId, model: model, effort: effort)
+                    onCreateAndLaunch: { prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort, role in
+                        createManualTaskAndLaunch(prompt: prompt, projectPath: projectPath, title: title, createWorktree: createWorktree, runRemotely: runRemotely, skipPermissions: skipPermissions, commandOverride: commandOverride, images: images, assistant: assistant, apiServiceId: apiServiceId, model: model, effort: effort, role: role)
                     },
                     onMachineChoice: { pendingMachineChoice = $0 }
                 )
@@ -3111,7 +3111,7 @@ struct ContentView: View {
         presentNewTask()
     }
 
-    private func createManualTask(prompt: String, projectPath: String?, title: String? = nil, startImmediately: Bool = false, images: [ImageAttachment] = []) {
+    private func createManualTask(prompt: String, projectPath: String?, title: String? = nil, startImmediately: Bool = false, images: [ImageAttachment] = [], role: Role? = nil) {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String
         if let title, !title.isEmpty {
@@ -3124,7 +3124,7 @@ struct ContentView: View {
             var mutable = img
             return try? mutable.saveToPersistent()
         }
-        let link = Link(
+        var link = Link(
             name: name,
             projectPath: projectPath,
             column: startImmediately ? .inProgress : .backlog,
@@ -3133,6 +3133,14 @@ struct ContentView: View {
             promptImagePaths: imagePaths,
             agentAt: newTaskAsAgent ? .now : nil
         )
+        // A role picked for a card that starts later still sets its model and
+        // effort, so the launch dialog opens with them.
+        if let role {
+            link.role = role.name
+            link.modelOverride = role.model
+            link.effortOverride = role.effort
+            if let assistant = role.assistant { link.assistant = assistant }
+        }
 
         store.dispatch(.createManualTask(link))
         KanbanCodeLog.info("manual-task", "Created manual task card=\(link.id.prefix(12)) name='\(name)' project=\(projectPath ?? "nil") startImmediately=\(startImmediately)")
@@ -3142,7 +3150,7 @@ struct ContentView: View {
         }
     }
 
-    private func createManualTaskAndLaunch(prompt: String, projectPath: String?, title: String? = nil, createWorktree: Bool, runRemotely: Bool, skipPermissions: Bool = true, commandOverride: String? = nil, images: [ImageAttachment] = [], assistant: CodingAssistant = .claude, apiServiceId: String? = nil, model: String? = nil, effort: String? = nil) {
+    private func createManualTaskAndLaunch(prompt: String, projectPath: String?, title: String? = nil, createWorktree: Bool, runRemotely: Bool, skipPermissions: Bool = true, commandOverride: String? = nil, images: [ImageAttachment] = [], assistant: CodingAssistant = .claude, apiServiceId: String? = nil, model: String? = nil, effort: String? = nil, role: Role? = nil) {
         let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let name: String
         if let title, !title.isEmpty {
@@ -3168,6 +3176,7 @@ struct ContentView: View {
         // Stored on the card so resumes keep the same model and effort.
         link.modelOverride = model
         link.effortOverride = effort
+        link.role = role?.name
         if newTaskAsAgent { link.agentAt = .now }
         let effectivePath = projectPath ?? NSHomeDirectory()
 
@@ -3177,7 +3186,7 @@ struct ContentView: View {
         Task {
             let settings = try? await settingsStore.read()
             let project = settings?.projects.first(where: { $0.path == effectivePath })
-            let builtPrompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings)
+            let builtPrompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings, role: role)
 
             let wtName: String? = (createWorktree && assistant.supportsWorktree) ? "" : nil
             let machineChoice = pendingMachineChoice
