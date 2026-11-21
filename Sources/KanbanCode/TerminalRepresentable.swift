@@ -728,13 +728,14 @@ final class TerminalCache {
     private var scrollRemainder: [String: Double] = [:]
 
     /// Bytes to send for Cmd+<arrow>, or nil for any other key.
-    /// Left/Right → Ctrl+A / Ctrl+E (start / end of line).
-    /// Up/Down → ESC < / ESC > (readline start / end of the whole buffer,
-    /// i.e. the whole prompt when it spans several lines).
-    static func commandArrowBytes(keyCode: UInt16) -> [UInt8]? {
+    /// Left/Right → Home / End. Claude Code's prompt moves to the start / end
+    /// of the visual (wrapped) line for these; Ctrl+A / Ctrl+E would jump to the
+    /// start / end of the whole paragraph instead. Shells honour Home / End too.
+    /// Up/Down → ESC < / ESC > (readline start / end of the whole buffer).
+    static func commandArrowBytes(keyCode: UInt16, applicationCursor: Bool = false) -> [UInt8]? {
         switch keyCode {
-        case 123: return [0x01]        // left
-        case 124: return [0x05]        // right
+        case 123: return applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal
+        case 124: return applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal
         case 126: return [0x1b, 0x3c]  // up
         case 125: return [0x1b, 0x3e]  // down
         default: return nil
@@ -769,7 +770,8 @@ final class TerminalCache {
             // SwiftTerm maps Cmd+Left/Right to the word-wise ESC b / ESC f, the
             // same as Option+arrows, and ignores Cmd+Up/Down.
             if lineKillMods == .command,
-               let bytes = Self.commandArrowBytes(keyCode: event.keyCode) {
+               let bytes = Self.commandArrowBytes(keyCode: event.keyCode,
+                                                 applicationCursor: terminal.terminal.applicationCursor) {
                 terminal.send(bytes)
                 return nil
             }
