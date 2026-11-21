@@ -727,10 +727,25 @@ final class TerminalCache {
     /// movement adds up instead of being rounded away or up.
     private var scrollRemainder: [String: Double] = [:]
 
+    /// Bytes to send for Cmd+<arrow>, or nil for any other key.
+    /// Left/Right → Ctrl+A / Ctrl+E (start / end of line).
+    /// Up/Down → ESC < / ESC > (readline start / end of the whole buffer,
+    /// i.e. the whole prompt when it spans several lines).
+    static func commandArrowBytes(keyCode: UInt16) -> [UInt8]? {
+        switch keyCode {
+        case 123: return [0x01]        // left
+        case 124: return [0x05]        // right
+        case 126: return [0x1b, 0x3c]  // up
+        case 125: return [0x1b, 0x3e]  // down
+        default: return nil
+        }
+    }
+
     private init() {
-        // Intercept keyDown events in terminal views for three purposes:
+        // Intercept keyDown events in terminal views for these purposes:
         // 1. Shift+Enter → send \n instead of \r (Claude Code newline vs submit)
         // 2. Cmd+Backspace → Ctrl+U (delete line)
+        // 2b. Cmd+Arrows → start/end of line (left/right) and prompt (up/down)
         // 3. Any key while in tmux copy-mode → exit copy-mode first, then let key through
         shiftEnterMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let terminal = event.window?.firstResponder as? TerminalView else { return event }
@@ -747,6 +762,15 @@ final class TerminalCache {
             let lineKillMods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if event.keyCode == 51, lineKillMods == .command {
                 terminal.send([0x15])
+                return nil
+            }
+
+            // Cmd+arrows: line / prompt navigation (like Terminal.app / iTerm).
+            // SwiftTerm maps Cmd+Left/Right to the word-wise ESC b / ESC f, the
+            // same as Option+arrows, and ignores Cmd+Up/Down.
+            if lineKillMods == .command,
+               let bytes = Self.commandArrowBytes(keyCode: event.keyCode) {
+                terminal.send(bytes)
                 return nil
             }
 
