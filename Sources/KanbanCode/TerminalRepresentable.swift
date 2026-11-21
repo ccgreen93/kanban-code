@@ -731,13 +731,14 @@ final class TerminalCache {
     /// Left/Right → Home / End. Claude Code's prompt moves to the start / end
     /// of the visual (wrapped) line for these; Ctrl+A / Ctrl+E would jump to the
     /// start / end of the whole paragraph instead. Shells honour Home / End too.
-    /// Up/Down → ESC < / ESC > (readline start / end of the whole buffer).
+    /// Up/Down → Ctrl+Home / Ctrl+End, which Claude Code binds to scrolling the
+    /// transcript to the top / bottom (it has no key for the prompt's start / end).
     static func commandArrowBytes(keyCode: UInt16, applicationCursor: Bool = false) -> [UInt8]? {
         switch keyCode {
         case 123: return applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal
         case 124: return applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal
-        case 126: return [0x1b, 0x3c]  // up
-        case 125: return [0x1b, 0x3e]  // down
+        case 126: return [0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x48]  // up: ESC [ 1 ; 5 H
+        case 125: return [0x1b, 0x5b, 0x31, 0x3b, 0x35, 0x46]  // down: ESC [ 1 ; 5 F
         default: return nil
         }
     }
@@ -746,7 +747,7 @@ final class TerminalCache {
         // Intercept keyDown events in terminal views for these purposes:
         // 1. Shift+Enter → send \n instead of \r (Claude Code newline vs submit)
         // 2. Cmd+Backspace → Ctrl+U (delete line)
-        // 2b. Cmd+Arrows → start/end of line (left/right) and prompt (up/down)
+        // 2b. Cmd+Arrows → start/end of line (left/right), scroll top/bottom (up/down)
         // 3. Any key while in tmux copy-mode → exit copy-mode first, then let key through
         shiftEnterMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let terminal = event.window?.firstResponder as? TerminalView else { return event }
