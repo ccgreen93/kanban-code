@@ -18,6 +18,7 @@ This card's change is in review.
    what changed, why, and the tests run.
 
 Do not push, post, resolve or approve anything. If you found problems you
-could not fix, hand off to `build` with the list. If the pull request is open
+could not fix, hand off with the list to the role that built the change
+(`build-lite` or `build`, see the earlier stages). If the pull request is open
 and everything is fixed, hand off to `merge`. Otherwise report the commits
 and every draft in full and stop: the human pushes.

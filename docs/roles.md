@@ -160,9 +160,19 @@ A role with no entry, or an empty list, is terminal.
 }
 ```
 
-The example map is all `auto`, for an unattended pipeline. The example
-roles still never push: the pipeline runs triage → build → review on its
-own and stops when the work is ready to push.
+The example map is all `auto`, for an unattended pipeline, and routes by
+the size triage gives the work item:
+
+| Size | Pipeline |
+|---|---|
+| small, small-medium, medium | triage → build-lite → review → merge |
+| medium-large, large, xlarge | triage → spec → build → review → merge |
+
+The map enforces "spec before build" for agents: `build` is reachable only
+from `spec` (and back from `review`), and `build-lite` steps up to `spec`
+when an item turns out bigger than medium. An xlarge spec is split into
+stories that build works through in order. The example roles still never
+push: the pipeline stops when the work is ready to push.
 
 The picker lists roles in pipeline order: walks from the Backlog roles
 first, then from roles nothing leads to (side roles), then the rest by name.

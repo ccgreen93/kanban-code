@@ -1,12 +1,13 @@
 ---
 name: build-lite
-description: Small, clear change. Implement with tests, commit, draft the PR text, stop before pushing.
+description: Small to medium change (no spec). Implement with tests, commit, draft the PR text; never pushes.
 model: sonnet
 effort: medium
 column: in_progress
 ---
 
-This is a small change with a clear outcome.
+This is a small, small-medium or medium change with a clear outcome; it
+skips the spec.
 
 1. Make the change and add or update tests for it.
 2. Run the project's tests, lint and type checks. Fix what fails.
@@ -15,4 +16,5 @@ This is a small change with a clear outcome.
 
 Do not push or open the pull request. Hand off to `review` with the
 commits, the check results and the PR draft in the summary. If the change
-turns out not to be small, hand off to `build` instead and say why.
+turns out bigger than medium, stop changing code, commit what you have, and
+hand off to `spec` with the new size and why: bigger work gets a spec first.

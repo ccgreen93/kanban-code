@@ -45,6 +45,9 @@ issues from Linear.
    with no ticket.
 9. Automated pipeline (2026-11-22): the example map is all `auto`. Pushing
    stays a human step until gates (step 4).
+10. Routing by size (2026-11-22): triage sizes the item. small,
+    small-medium and medium go to build-lite; medium-large, large and
+    xlarge go to spec then build. Agents reach build only through spec.
 
 ## Steps
 

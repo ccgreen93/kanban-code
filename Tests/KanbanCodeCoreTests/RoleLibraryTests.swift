@@ -127,7 +127,11 @@ struct RoleLibraryTests {
         let library = RoleLibrary.load(directory: dir)
         let names = Set(library.roles.map(\.name))
         #expect(names == ["triage", "adhoc", "spec", "build-lite", "build", "review", "merge", "pr-review", "pr-watch", "control"])
-        #expect(library.roles.map(\.name) == ["triage", "spec", "build-lite", "build", "adhoc", "review", "merge", "pr-review", "pr-watch", "control"])
+        #expect(library.roles.map(\.name) == ["triage", "build-lite", "spec", "adhoc", "review", "build", "merge", "pr-review", "pr-watch", "control"])
+        // Bigger work always gets a spec: an agent reaches build only from
+        // spec, or back from review.
+        let intoBuild = library.transitions.edges.filter { $0.value.contains { $0.role == "build" } }.keys.sorted()
+        #expect(intoBuild == ["review", "spec"])
         #expect(library.roles.filter(\.controls).map(\.name) == ["control"])
         for (from, edges) in library.transitions.edges {
             #expect(names.contains(from), "unknown role \(from) in transitions.json")
