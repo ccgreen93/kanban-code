@@ -727,10 +727,26 @@ final class TerminalCache {
     /// movement adds up instead of being rounded away or up.
     private var scrollRemainder: [String: Double] = [:]
 
+    /// Bytes to send for Cmd+<arrow>, or nil for any other key.
+    /// Left/Right → Home / End. Claude Code's prompt moves to the start / end
+    /// of the visual (wrapped) line for these; Ctrl+A / Ctrl+E would jump to the
+    /// start / end of the whole paragraph instead. Shells honour Home / End too.
+    /// Up/Down → Ctrl+A / Ctrl+E: start / end of the paragraph (logical line).
+    static func commandArrowBytes(keyCode: UInt16, applicationCursor: Bool = false) -> [UInt8]? {
+        switch keyCode {
+        case 123: return applicationCursor ? EscapeSequences.moveHomeApp : EscapeSequences.moveHomeNormal
+        case 124: return applicationCursor ? EscapeSequences.moveEndApp : EscapeSequences.moveEndNormal
+        case 126: return [0x01]  // up: Ctrl+A
+        case 125: return [0x05]  // down: Ctrl+E
+        default: return nil
+        }
+    }
+
     private init() {
-        // Intercept keyDown events in terminal views for three purposes:
+        // Intercept keyDown events in terminal views for these purposes:
         // 1. Shift+Enter → send \n instead of \r (Claude Code newline vs submit)
         // 2. Cmd+Backspace → Ctrl+U (delete line)
+        // 2b. Cmd+Arrows → start/end of visual line (left/right), start/end of paragraph (up/down)
         // 3. Any key while in tmux copy-mode → exit copy-mode first, then let key through
         shiftEnterMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let terminal = event.window?.firstResponder as? TerminalView else { return event }
@@ -747,6 +763,16 @@ final class TerminalCache {
             let lineKillMods = event.modifierFlags.intersection([.command, .option, .control, .shift])
             if event.keyCode == 51, lineKillMods == .command {
                 terminal.send([0x15])
+                return nil
+            }
+
+            // Cmd+arrows: line / prompt navigation (like Terminal.app / iTerm).
+            // SwiftTerm maps Cmd+Left/Right to the word-wise ESC b / ESC f, the
+            // same as Option+arrows, and ignores Cmd+Up/Down.
+            if lineKillMods == .command,
+               let bytes = Self.commandArrowBytes(keyCode: event.keyCode,
+                                                 applicationCursor: terminal.terminal.applicationCursor) {
+                terminal.send(bytes)
                 return nil
             }
 
