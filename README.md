@@ -33,6 +33,36 @@ Kanban Code's goal is to ease as much as possible the context switching bottlene
 
 Kanban Code combines the lessons learned from [claude-resume](https://github.com/langwatch/claude-resume), [claude-remote](https://github.com/langwatch/claude-remote), [git-orchard](https://github.com/drewdrewthis/git-orchard), [claude-pushover](https://github.com/langwatch/claude-pushover), and [cc-amphetamine](https://github.com/rogeriochaves/cc-amphetamine) into one unified experience.
 
+## This Fork (cg-main)
+
+This is Chris's fork of [langwatch/kanban-code](https://github.com/langwatch/kanban-code). The `main` branch mirrors upstream; `cg-main` carries the changes below. Upstream features are documented in the sections that follow and are not repeated here.
+
+**Board and layout**
+- **Triage view**: a queue of the cards waiting on you, with the last message shown on the focused card. See [`docs/triage-view.md`](docs/triage-view.md).
+- **Strict or free card placement**: toolbar toggle. Free placement lets cards drop into any column, including empty ones; the list view follows the board's column setting.
+- **Customisable column order and visibility**.
+- **Agents section beside the board**, with a left toolbar button to show or hide the Agents & Channels rail.
+
+**Cards and sessions**
+- **Card priority** and a **session status edge**, shown in list view and search.
+- **Import sessions** started outside Kanban.
+- **Model and effort picker** in the new task dialog.
+- **Claude accounts**: list several `CLAUDE_CONFIG_DIR` folders in Settings. See [`docs/claude-accounts.md`](docs/claude-accounts.md).
+
+**Terminal**
+- Terminal font and cursor settings, and a line cursor in card terminals.
+- Cmd+Backspace deletes the whole line.
+- Smoother scrolling in card terminals, including fullscreen programs, and selection past the visible screen.
+- tmux's status line is hidden in card terminals.
+
+**Fixes**
+- A woken Mac no longer turns idle cards into working ones.
+- Answered prompts read as working, not blocked.
+- Hooks no longer land in a group that a matcher narrows.
+- Quiet subagent transcripts end a card's work without needing a stop event.
+
+To build the fork's macOS app locally, run `make app`. It produces `build/KanbanCode.app`. `make install` also copies it to `/Applications`.
+
 ## Installation
 
 ### macOS
