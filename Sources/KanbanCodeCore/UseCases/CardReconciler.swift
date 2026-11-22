@@ -104,8 +104,15 @@ public enum CardReconciler {
         // handful, looked up for every session instead of scanning every card.
         let tmuxCardIds = existing.filter { $0.tmuxLink != nil }.map(\.id)
 
+        // Sessions a card ran in before a role hand-off. They stay in the
+        // card's history, and must never be linked back as its live session.
+        let pastRoleSessionIds = Set(existing.flatMap(\.pastRoleSessionIds))
+
         // A. Match sessions to existing cards
         for session in snapshot.sessions {
+            if pastRoleSessionIds.contains(session.id), cardIdBySessionId[session.id] == nil {
+                continue
+            }
             let cardId = findCardForSession(
                 session: session,
                 cardIdBySessionId: cardIdBySessionId,

@@ -3186,7 +3186,7 @@ struct ContentView: View {
         Task {
             let settings = try? await settingsStore.read()
             let project = settings?.projects.first(where: { $0.path == effectivePath })
-            let builtPrompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings, role: role)
+            let builtPrompt = PromptBuilder.buildPrompt(card: link, project: project, settings: settings, roles: RoleLibrary.load())
 
             let wtName: String? = (createWorktree && assistant.supportsWorktree) ? "" : nil
             let machineChoice = pendingMachineChoice

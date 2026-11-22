@@ -15,4 +15,6 @@ Write a spec for this ticket with the `bmad-spec` skill. Do not write code.
   not pick an option for the human; give your recommendation and why.
 - Commit the spec on this branch. Do not push.
 
-Finish with the spec's path, the open questions, and stop.
+If there are open questions, report them with the spec's path and stop: the
+human answers them. If there are none, hand off to `build` with the spec's
+path and a short outline.

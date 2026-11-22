@@ -15,6 +15,6 @@ branch, build from it.
   before you finish.
 - Draft the pull request title and body in full.
 
-Do not push or open the pull request. Finish with the commits, the check
-results, anything you are unsure about, and the PR draft, then stop for a
-yes.
+Do not push or open the pull request. Hand off to `review` with the
+commits, the check results, anything you are unsure about, and the PR draft
+in the summary.

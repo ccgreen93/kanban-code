@@ -71,9 +71,14 @@ public struct RoleLibrary: Sendable, Equatable {
             assistant: fields["assistant"].flatMap { CodingAssistant(rawValue: $0.lowercased()) },
             skill: fields["skill"],
             column: fields["column"].flatMap(parseColumn),
-            singleton: ["true", "yes", "1"].contains(fields["singleton"]?.lowercased() ?? ""),
+            singleton: isTrue(fields["singleton"]),
+            controls: isTrue(fields["controls"]),
             body: body
         )
+    }
+
+    static func isTrue(_ value: String?) -> Bool {
+        ["true", "yes", "1"].contains(value?.lowercased() ?? "")
     }
 
     /// `---\nkey: value\n---\nbody`. Values may be quoted; blank values and
@@ -149,5 +154,31 @@ public struct RoleLibrary: Sendable, Equatable {
             case (nil, nil): return a.name < b.name
             }
         }
+    }
+}
+
+/// The role library for views that build often (card menus): read from disk
+/// at most once every few seconds, so edits still show up quickly.
+public final class RoleLibraryCache: @unchecked Sendable {
+    public static let shared = RoleLibraryCache()
+
+    private let lock = NSLock()
+    private var library = RoleLibrary()
+    private var loadedAt: Date?
+    private let directory: String
+    private let maxAge: TimeInterval
+
+    public init(directory: String = RoleLibrary.defaultDirectory, maxAge: TimeInterval = 5) {
+        self.directory = directory
+        self.maxAge = maxAge
+    }
+
+    public var current: RoleLibrary {
+        lock.lock()
+        defer { lock.unlock() }
+        if let loadedAt, Date.now.timeIntervalSince(loadedAt) < maxAge { return library }
+        library = RoleLibrary.load(directory: directory)
+        loadedAt = .now
+        return library
     }
 }

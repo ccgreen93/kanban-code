@@ -803,6 +803,12 @@ public enum Action: Sendable {
     case relinkSession(cardId: String, sessionLink: SessionLink)
     case sessionModelsScanned([String: String])
     case setCardModel(cardId: String, model: String?)
+    /// Give a card a role (or none) without a hand-off: its model and effort
+    /// follow the role from the next launch or resume.
+    case setCardRole(cardId: String, role: Role?)
+    /// Record a finished role stage and switch the card to the next role,
+    /// ready for the fresh session `MasterEngine.handOffRole` starts.
+    case applyRoleHandoff(cardId: String, next: Role, summary: String?)
     case archiveCard(cardId: String)
     /// Brings an archived card back to the board.
     case unarchiveCard(cardId: String)
@@ -1522,6 +1528,25 @@ public enum Reducer {
             guard state.sessionModels != models else { return [] }
             state.sessionModels = models
             return []
+
+        case .setCardRole(let cardId, let role):
+            guard var link = state.links[cardId] else { return [] }
+            guard link.role != role?.name else { return [] }
+            link.role = role?.name
+            if let role {
+                if let assistant = role.assistant, link.sessionLink == nil { link.assistant = assistant }
+                link.modelOverride = role.model
+                link.effortOverride = link.effectiveAssistant.supportsEffort ? role.effort : nil
+            }
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
+
+        case .applyRoleHandoff(let cardId, let next, let summary):
+            guard let link = state.links[cardId] else { return [] }
+            let updated = RoleHandoff.apply(to: link, next: next, summary: summary)
+            state.links[cardId] = updated
+            return [.upsertLink(updated)]
 
         case .setCardModel(let cardId, let model):
             guard var link = state.links[cardId] else { return [] }
@@ -2814,6 +2839,7 @@ public enum Reducer {
                     link.modelOverride = existing.modelOverride
                     link.effortOverride = existing.effortOverride
                     link.role = existing.role
+                    link.roleHistory = existing.roleHistory
                     link.selfCompactContextThresholdTokens = existing.selfCompactContextThresholdTokens
                     // The machine record is written by the supervisor, never
                     // by the reconciler. A snapshot taken before the machine

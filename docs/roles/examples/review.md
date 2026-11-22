@@ -17,5 +17,7 @@ This card's change is in review.
 3. Draft a reply for each review comment, and a PR comment describing
    what changed, why, and the tests run.
 
-Do not push, post, resolve or approve anything. Finish with the commits
-and every draft in full, then stop for a yes.
+Do not push, post, resolve or approve anything. If you found problems you
+could not fix, hand off to `build` with the list. If the pull request is open
+and everything is fixed, hand off to `merge`. Otherwise report the commits
+and every draft in full and stop: the human pushes.

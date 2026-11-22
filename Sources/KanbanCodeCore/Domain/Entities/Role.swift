@@ -24,6 +24,10 @@ public struct Role: Codable, Sendable, Equatable, Identifiable {
     /// Only one card of this role may run at a time (shared ports, a shared
     /// browser). Not enforced yet.
     public var singleton: Bool
+    /// A control role: its card may hand off other cards
+    /// (`kanban role handoff <next> --card <id>`), under the same rules as
+    /// their own workers.
+    public var controls: Bool
     /// The worker's instructions (the markdown after the frontmatter).
     public var body: String
 
@@ -38,6 +42,7 @@ public struct Role: Codable, Sendable, Equatable, Identifiable {
         skill: String? = nil,
         column: KanbanCodeColumn? = nil,
         singleton: Bool = false,
+        controls: Bool = false,
         body: String = ""
     ) {
         self.name = name
@@ -48,6 +53,7 @@ public struct Role: Codable, Sendable, Equatable, Identifiable {
         self.skill = skill
         self.column = column
         self.singleton = singleton
+        self.controls = controls
         self.body = body
     }
 }
@@ -121,5 +127,37 @@ public struct RoleTransitions: Codable, Sendable, Equatable {
 
     public func isTerminal(_ role: String) -> Bool {
         next(after: role).isEmpty
+    }
+}
+
+/// One finished stage of a card's role pipeline. A hand-off ends the
+/// card's session and starts a fresh one for the next role, so the stage
+/// keeps the old session: it stays readable and resumable, and the
+/// reconciler never links it back onto the card.
+public struct RoleStage: Codable, Sendable, Equatable {
+    /// The role that ran this stage. Nil when the card had no role yet.
+    public var role: String?
+    public var sessionId: String?
+    public var sessionPath: String?
+    /// What the worker (or the human) said when handing off.
+    public var summary: String?
+    /// The role the card moved to.
+    public var handedOffTo: String
+    public var endedAt: Date
+
+    public init(
+        role: String?,
+        sessionId: String? = nil,
+        sessionPath: String? = nil,
+        summary: String? = nil,
+        handedOffTo: String,
+        endedAt: Date = .now
+    ) {
+        self.role = role
+        self.sessionId = sessionId
+        self.sessionPath = sessionPath
+        self.summary = summary
+        self.handedOffTo = handedOffTo
+        self.endedAt = endedAt
     }
 }

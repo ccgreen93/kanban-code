@@ -1375,6 +1375,7 @@ async function runSubagentCreate(
     contextThreshold?: string;
     from?: string;
     worktree?: string | boolean;
+    role?: string;
     json?: boolean;
   }
 ): Promise<void> {
@@ -1412,6 +1413,7 @@ async function runSubagentCreate(
     model: opts.model,
     contextThresholdTokens,
     worktreeName: requestedWorktreeName(opts.worktree, handle),
+    role: operation === "spawn" ? opts.role?.trim() || undefined : undefined,
   });
   const response = await submitSubagentRequest(request);
   if (!response.ok) throw new Error(response.error ?? "Kanban Code rejected the subagent command.");
@@ -1483,6 +1485,10 @@ for (const operation of ["spawn", "fork"] as const) {
     command.option(
       "--worktree [name]",
       "Give the child its own worktree instead of sharing this card's checkout; defaults to the handle"
+    );
+    command.option(
+      "--role <role>",
+      "Start the child in a role from ~/.kanban-code/roles (its instructions, model and effort)"
     );
   }
   command
@@ -1872,6 +1878,66 @@ parentCmd
         makeSubagentRequest("archive", parent.id, { cardId: child.id })
       );
       if (!response.ok) throw new Error(response.error ?? "Kanban Code could not archive this subagent.");
+    } catch (error) {
+      console.error(String(error instanceof Error ? error.message : error));
+      process.exitCode = 1;
+    }
+  });
+
+const roleCmd = program
+  .command("role")
+  .description("Hand this card to its next role (see ~/.kanban-code/roles)")
+  .addHelpText(
+    "after",
+    `
+
+A card's role sets its worker's instructions, model and effort. When your stage
+is done, commit, then hand off with a summary the next role can start from. The
+card keeps its worktree, branch and PRs; this session ends and a fresh one
+starts for the next role, seeing the task and every summary so far:
+
+  kanban role handoff review - <<'EOF'
+  Implemented X in a.swift and b.swift, tests pass. Risky: Y.
+  EOF
+
+You may only hand off along the arrows in transitions.json that are marked
+"auto". Other arrows need the human: report and stop instead.
+
+A control agent (a card whose role has \`controls: true\`) hands off other
+cards with --card, under the same rules, and may give a first role to a
+started card that has none:
+
+  kanban role handoff review --card card_abc123 "Build finished but did not hand off."
+`
+  );
+
+roleCmd
+  .command("handoff")
+  .description("End this session and start the next role on the same card")
+  .argument("<role>", "Next role, e.g. review")
+  .argument("[summary...]", "What you did and what is left, or - with stdin")
+  .option("--card <id>", "Hand off another card (control roles only)")
+  .action(async (role: string, summaryArgs: string[], opts: { card?: string }) => {
+    try {
+      const links = readLinks();
+      const card = currentCardOrThrow(links);
+      const target = opts.card?.trim() || card.id;
+      if (target !== card.id && !links.some((l) => l.id === target)) {
+        throw new Error(`Card ${target} was not found.`);
+      }
+      const summary = await readSubagentPromptFromArgsOrStdin(summaryArgs);
+      if (!summary.trim()) {
+        throw new Error("A hand-off needs a summary for the next role. Pass it as arguments or use - with stdin.");
+      }
+      const response = await submitSubagentRequest(
+        makeSubagentRequest("roleHandoff", card.id, { cardId: target, role: role.trim(), prompt: summary })
+      );
+      if (!response.ok) throw new Error(response.error ?? "Kanban Code rejected the hand-off.");
+      console.log(
+        target === card.id
+          ? `Handing off to ${role.trim()}. This session ends in a moment; stop here.`
+          : `Card ${target} handed off to ${role.trim()}; a fresh session is starting.`
+      );
     } catch (error) {
       console.error(String(error instanceof Error ? error.message : error));
       process.exitCode = 1;

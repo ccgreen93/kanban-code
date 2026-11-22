@@ -20,4 +20,5 @@ Finish with a short report:
   (small and clear), `build` (larger change), `needs info` (list the
   questions), `not a bug` or `duplicate` (with evidence).
 
-Then stop and wait. The human decides.
+For `spec`, `build-lite` or `build`, hand off to that role with this report
+as the summary. Otherwise report and stop: the human decides.

@@ -13,6 +13,6 @@ This is a small change with a clear outcome.
 3. Commit with a Conventional Commit message.
 4. Draft the pull request title and body in full.
 
-Do not push or open the pull request. Finish with the commits, the check
-results and the PR draft, then stop for a yes. If the change turns out not
-to be small, say so and recommend `build`.
+Do not push or open the pull request. Hand off to `review` with the
+commits, the check results and the PR draft in the summary. If the change
+turns out not to be small, hand off to `build` instead and say why.

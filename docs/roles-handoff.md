@@ -36,11 +36,15 @@ issues from Linear.
    (model switch plus self-compact) maybe later.
 5. **Gates are opt-in per role**. Day one: `git push`, PR open, comment,
    review and resolve, ticket writes. `gh pr merge` is always denied.
-6. **No LLM supervisor**: rules in the daemon plus the Triage view.
+6. **No LLM supervisor required**: rules in the daemon plus the Triage
+   view. An optional control role (2026-11-22) runs the board as a card,
+   with no more authority than a worker: `auto` arrows only.
 7. **One `transitions.json`**, not `next` in each role file, with `auto`
    or `ask` per edge.
 8. Triage is the role imported cards start in; adhoc is for manual tasks
    with no ticket.
+9. Automated pipeline (2026-11-22): the example map is all `auto`. Pushing
+   stays a human step until gates (step 4).
 
 ## Steps
 
@@ -50,9 +54,12 @@ issues from Linear.
    assistant, role instructions put ahead of the task at launch
    (`PromptBuilder.wrap`), badge on cards, `role:` and `effort:` in
    `kanban list/show`, generic example roles.
-2. `kanban role handoff <next> "summary"`: validate against the map, end
-   the session, relaunch the same card with the next role's model, effort
-   and instructions plus the summary; move the column in free placement.
+2. **Done (branch `cg/roles-handoff`):** `kanban role handoff` (worker,
+   or control agent with `--card`), `RoleHandoff` rules, `Link.roleHistory`
+   (Role Stages in the Prompt tab, resume command per stage; reconciler
+   skips past sessions), Role / Hand Off To in the card menu, `--role` on
+   `subagent spawn`, `controls: true` and the example `control` role,
+   all-auto example map.
 3. `ask` edges as `AttentionRequest`s answered in the Triage view.
 4. Gates in the `PreToolUse` Bash hook (`VaultHook` is the precedent):
    deny with "report your draft and stop", released once from Triage.

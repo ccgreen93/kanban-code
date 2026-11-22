@@ -71,6 +71,9 @@ extension MasterEngine {
         if request.operation == .relinkSession {
             return try await relinkCardSession(request)
         }
+        if request.operation == .roleHandoff {
+            return try await roleHandoff(request)
+        }
         guard let parent = await waitForCard(request.parentCardId) else {
             throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
         }
@@ -100,6 +103,8 @@ extension MasterEngine {
             return try await enqueueCardPrompt(request)
         case .relinkSession:
             return try await relinkCardSession(request)
+        case .roleHandoff:
+            return try await roleHandoff(request)
         case .setContextThreshold:
             let child = try ownedSubagent(from: parent.id, targetId: request.cardId)
             // The child's own assistant decides this, not whatever the parent runs.
@@ -222,6 +227,33 @@ extension MasterEngine {
         return card.id
     }
 
+    /// `kanban role handoff`, from the card's own agent or, with `--card`,
+    /// from a control agent. A worker's own session ends two seconds after
+    /// the answer, so the command that asked prints its result first.
+    private func roleHandoff(_ request: SubagentCommandRequest) async throws -> String {
+        guard let next = request.role?.trimmingCharacters(in: .whitespacesAndNewlines), !next.isEmpty else {
+            throw RoleHandoff.Failure.unknownRole("")
+        }
+        let targetId = request.cardId ?? request.parentCardId
+        let ownCard = targetId == request.parentCardId
+        if !ownCard {
+            guard let caller = await waitForCard(request.parentCardId) else {
+                throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
+            }
+            let callerRole = RoleLibrary.load().role(named: caller.role)
+            guard callerRole?.controls == true else {
+                throw RoleHandoff.Failure.notAController(caller.role ?? "none")
+            }
+        }
+        return try await handOffRole(
+            cardId: targetId,
+            to: next,
+            summary: request.prompt,
+            requester: ownCard ? .worker : .controller,
+            delay: ownCard ? .seconds(2) : .zero
+        )
+    }
+
     /// Reconciliation never moves a card off a session it already has, so a card
     /// left pointing at a stale transcript stays there until something says
     /// otherwise. Writing links.json from outside cannot do it: the running app
@@ -281,8 +313,17 @@ extension MasterEngine {
               !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw SubagentCommandExecutionError.missingPrompt
         }
-        let assistant = request.assistant ?? parent.effectiveAssistant
-        let model = request.model ?? Self.inheritedModel(from: parent, assistant: assistant)
+        // A child started in a role takes the role's assistant, model and
+        // effort unless the spawn names its own.
+        let role: Role?
+        if let name = request.role?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            guard let found = RoleLibrary.load().role(named: name) else { throw RoleHandoff.Failure.unknownRole(name) }
+            role = found
+        } else {
+            role = nil
+        }
+        let assistant = request.assistant ?? role?.assistant ?? parent.effectiveAssistant
+        let model = request.model ?? role?.model ?? Self.inheritedModel(from: parent, assistant: assistant)
         var child = makeSubagentLink(
             owner: parent,
             template: parent,
@@ -302,8 +343,16 @@ extension MasterEngine {
             ? effectiveProjectPath(for: parent)
             : parent.projectPath ?? effectiveProjectPath(for: parent)
         if worktreeName != nil { child.worktreeLink = nil }
-        let deliveryPrompt = identifiedSubagentPrompt(prompt, childId: child.id)
-        child.promptBody = deliveryPrompt
+        let identifiedPrompt = identifiedSubagentPrompt(prompt, childId: child.id)
+        child.promptBody = identifiedPrompt
+        var deliveryPrompt = identifiedPrompt
+        if let role {
+            child.role = role.name
+            if assistant.supportsEffort { child.effortOverride = role.effort }
+            let library = RoleLibrary.load()
+            deliveryPrompt = PromptBuilder.wrap(
+                identifiedPrompt, in: role, next: library.transitions.next(after: role.name))
+        }
         store.dispatch(.createManualTask(child))
         let deliveryError = await withCheckedContinuation { continuation in
             launch(

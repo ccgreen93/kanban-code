@@ -1,11 +1,16 @@
 {
-  "triage": ["spec", "build-lite", "build", "adhoc"],
-  "adhoc": ["build-lite", "build"],
-  "spec": ["build"],
-  "build-lite": [{ "role": "review", "mode": "auto" }, "build"],
-  "build": [{ "role": "review", "mode": "auto" }, "triage"],
-  "review": ["build", "merge"],
+  "triage": [
+    { "role": "spec", "mode": "auto" },
+    { "role": "build-lite", "mode": "auto" },
+    { "role": "build", "mode": "auto" },
+    { "role": "adhoc", "mode": "auto" }
+  ],
+  "adhoc": [{ "role": "build-lite", "mode": "auto" }, { "role": "build", "mode": "auto" }],
+  "spec": [{ "role": "build", "mode": "auto" }],
+  "build-lite": [{ "role": "review", "mode": "auto" }, { "role": "build", "mode": "auto" }],
+  "build": [{ "role": "review", "mode": "auto" }, { "role": "triage", "mode": "auto" }],
+  "review": [{ "role": "build", "mode": "auto" }, { "role": "merge", "mode": "auto" }],
   "merge": [],
   "pr-review": [],
-  "pr-watch": ["review"]
+  "pr-watch": [{ "role": "review", "mode": "auto" }]
 }

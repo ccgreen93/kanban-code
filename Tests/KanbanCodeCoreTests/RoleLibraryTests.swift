@@ -46,6 +46,7 @@ struct RoleLibraryTests {
         model_effort: low
         skill:
         singleton: yes
+        controls: true
         ---
         Review it.
         """
@@ -55,6 +56,7 @@ struct RoleLibraryTests {
         #expect(role.effort == "low")
         #expect(role.skill == nil)
         #expect(role.singleton)
+        #expect(role.controls)
         #expect(role.body == "Review it.")
     }
 
@@ -124,8 +126,9 @@ struct RoleLibraryTests {
         let dir = repo.appendingPathComponent("docs/roles/examples").path
         let library = RoleLibrary.load(directory: dir)
         let names = Set(library.roles.map(\.name))
-        #expect(names == ["triage", "adhoc", "spec", "build-lite", "build", "review", "merge", "pr-review", "pr-watch"])
-        #expect(library.roles.map(\.name) == ["triage", "spec", "build-lite", "build", "adhoc", "review", "merge", "pr-review", "pr-watch"])
+        #expect(names == ["triage", "adhoc", "spec", "build-lite", "build", "review", "merge", "pr-review", "pr-watch", "control"])
+        #expect(library.roles.map(\.name) == ["triage", "spec", "build-lite", "build", "adhoc", "review", "merge", "pr-review", "pr-watch", "control"])
+        #expect(library.roles.filter(\.controls).map(\.name) == ["control"])
         for (from, edges) in library.transitions.edges {
             #expect(names.contains(from), "unknown role \(from) in transitions.json")
             for edge in edges {
@@ -133,7 +136,7 @@ struct RoleLibraryTests {
             }
         }
         for role in library.roles {
-            #expect(role.column != nil, "\(role.name) has no column")
+            #expect(role.controls || role.column != nil, "\(role.name) has no column")
             #expect(!role.body.isEmpty, "\(role.name) has no instructions")
         }
     }
@@ -157,47 +160,103 @@ struct RoleLibraryTests {
 @Suite("Role on cards and prompts")
 struct RolePromptTests {
 
-    @Test("role survives encode and decode on a card")
+    private func library(_ roles: [Role], _ edges: [String: [RoleEdge]] = [:]) -> RoleLibrary {
+        RoleLibrary(roles: roles, transitions: RoleTransitions(edges))
+    }
+
+    @Test("role and role history survive encode and decode on a card")
     func linkRoundTrip() throws {
         var link = Link(name: "Card", source: .manual)
         link.role = "build"
+        link.roleHistory = [RoleStage(role: "spec", sessionId: "s1", sessionPath: "/s1.jsonl",
+                                      summary: "Spec at docs/x.md", handedOffTo: "build",
+                                      endedAt: Date(timeIntervalSince1970: 1_000))]
         let decoded = try JSONDecoder().decode(Link.self, from: JSONEncoder().encode(link))
         #expect(decoded.role == "build")
+        #expect(decoded.roleHistory == link.roleHistory)
+        #expect(decoded.pastRoleSessionIds == ["s1"])
 
         let plain = try JSONDecoder().decode(Link.self, from: JSONEncoder().encode(Link(name: "Plain", source: .manual)))
         #expect(plain.role == nil)
+        #expect(plain.roleHistory == nil)
     }
 
-    @Test("a role puts its instructions ahead of the task")
+    @Test("a role puts its instructions ahead of the task and the hand-off steps after it")
     func wrapsPrompt() {
         let role = Role(name: "build", description: "Implement it.", body: "Commit each step.")
-        let link = Link(name: "Card", source: .manual, promptBody: "Add dark mode")
-        let prompt = PromptBuilder.buildPrompt(card: link, role: role)
-        #expect(prompt == "# Role: build\n\nImplement it.\n\nCommit each step.\n\n# Task\n\nAdd dark mode")
+        var link = Link(name: "Card", source: .manual, promptBody: "Add dark mode")
+        link.role = "build"
+        let roles = library([role], ["build": [RoleEdge(role: "review", mode: .auto), RoleEdge(role: "triage")]])
+        let prompt = PromptBuilder.buildPrompt(card: link, roles: roles)
+        #expect(prompt.hasPrefix("# Role: build\n\nImplement it.\n\nCommit each step.\n\n# Task\n\nAdd dark mode\n\n# When you are done"))
+        #expect(prompt.contains("kanban role handoff <role> - <<'EOF'"))
+        #expect(prompt.contains("- `review`: hand off when your stage is done"))
+        #expect(prompt.contains("- `triage`: needs the human's yes"))
+    }
+
+    @Test("the last role is told to report and stop")
+    func terminalRole() {
+        let prompt = PromptBuilder.wrap("Check the PR", in: Role(name: "merge", body: "Check."))
+        #expect(prompt.hasSuffix("# When you are done\n\nThis is the last role. Report what you did and stop."))
+        #expect(!prompt.contains("kanban role handoff"))
+    }
+
+    @Test("a control role gets no hand-off footer")
+    func controlRoleNoFooter() {
+        let prompt = PromptBuilder.wrap("Run the board", in: Role(name: "control", controls: true, body: "Watch."))
+        #expect(prompt == "# Role: control\n\nWatch.\n\n# Task\n\nRun the board")
+    }
+
+    @Test("earlier stages' summaries come after the task, oldest first")
+    func earlierStages() {
+        let history = [
+            RoleStage(role: "spec", summary: "Spec written.", handedOffTo: "build", endedAt: Date(timeIntervalSince1970: 0)),
+            RoleStage(role: "build", summary: nil, handedOffTo: "review", endedAt: Date(timeIntervalSince1970: 60)),
+        ]
+        let prompt = PromptBuilder.wrap("Task", in: Role(name: "review"), history: history)
+        let task = prompt.range(of: "# Task")!.lowerBound
+        let stages = prompt.range(of: "# Earlier stages on this card")!.lowerBound
+        let spec = prompt.range(of: "## spec → build")!.lowerBound
+        let build = prompt.range(of: "## build → review")!.lowerBound
+        #expect(task < stages && stages < spec && spec < build)
+        #expect(prompt.contains("Spec written."))
+        #expect(prompt.contains("(no summary)"))
     }
 
     @Test("the project template wraps the task inside the role")
     func templateInsideRole() {
-        let role = Role(name: "spec", body: "Write a spec.")
-        let link = Link(name: "Card", source: .manual, promptBody: "Login page")
+        var link = Link(name: "Card", source: .manual, promptBody: "Login page")
+        link.role = "spec"
         var settings = Settings()
         settings.promptTemplate = "Task: ${prompt}"
-        let prompt = PromptBuilder.buildPrompt(card: link, settings: settings, role: role)
-        #expect(prompt == "# Role: spec\n\nWrite a spec.\n\n# Task\n\nTask: Login page")
+        let prompt = PromptBuilder.buildPrompt(card: link, settings: settings, roles: library([Role(name: "spec", body: "Write a spec.")]))
+        #expect(prompt.hasPrefix("# Role: spec\n\nWrite a spec.\n\n# Task\n\nTask: Login page\n\n"))
     }
 
-    @Test("no role leaves the prompt unchanged, and wrapping twice is a no-op")
-    func noRoleAndIdempotent() {
-        let link = Link(name: "Card", source: .manual, promptBody: "Fix bug")
+    @Test("no role, or a role missing from the library, leaves the prompt unchanged")
+    func noRole() {
+        var link = Link(name: "Card", source: .manual, promptBody: "Fix bug")
         #expect(PromptBuilder.buildPrompt(card: link) == "Fix bug")
-
-        let role = Role(name: "build", body: "Go.")
-        let once = PromptBuilder.wrap("Fix bug", in: role)
-        #expect(PromptBuilder.wrap(once, in: role) == once)
+        link.role = "deleted"
+        #expect(PromptBuilder.buildPrompt(card: link, roles: library([Role(name: "build")])) == "Fix bug")
     }
 
-    @Test("peer sync shares the role field")
+    @Test("wrapping a wrapped prompt, even another role's, never nests roles")
+    func unwrapsBeforeWrapping() {
+        let build = Role(name: "build", body: "Go.")
+        let review = Role(name: "review", body: "Look.")
+        let once = PromptBuilder.wrap("Fix bug", in: build, next: [RoleEdge(role: "review", mode: .auto)])
+        #expect(PromptBuilder.wrap(once, in: build, next: [RoleEdge(role: "review", mode: .auto)]) == once)
+        #expect(PromptBuilder.unwrapRoleTask(once) == "Fix bug")
+        let rewrapped = PromptBuilder.wrap(once, in: review)
+        #expect(rewrapped.components(separatedBy: "# Role: ").count == 2)
+        #expect(rewrapped.hasPrefix("# Role: review"))
+        #expect(PromptBuilder.unwrapRoleTask("Plain text") == "Plain text")
+    }
+
+    @Test("peer sync shares the role and its history")
     func linkSyncSharesRole() {
         #expect(LinkSync.sharedFields.contains { $0.name == "role" })
+        #expect(LinkSync.sharedFields.contains { $0.name == "roleHistory" })
     }
 }

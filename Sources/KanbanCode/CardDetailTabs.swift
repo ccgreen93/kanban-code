@@ -237,9 +237,108 @@ struct PromptTabView: View {
                         }
                     }
                 }
+
+                if let stages = card.link.roleHistory, !stages.isEmpty {
+                    RoleStagesSection(card: card, stages: stages, onCopyToast: onCopyToast)
+                        .padding(.top, 4)
+                }
             }
             .padding(16)
         }
+    }
+}
+
+// MARK: - Role stages
+
+/// A card's finished role stages, oldest first, then the current role. Each
+/// stage ran in its own session, which stays resumable from a terminal.
+struct RoleStagesSection: View {
+    let card: KanbanCodeCard
+    let stages: [RoleStage]
+    var onCopyToast: ((String) -> Void)?
+
+    private static let date: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .short
+        return f
+    }()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Role Stages")
+                .font(.app(.subheadline, weight: .bold))
+                .foregroundStyle(.secondary)
+            ForEach(Array(stages.enumerated()), id: \.offset) { _, stage in
+                stageRow(stage)
+            }
+            if let current = card.link.role {
+                HStack(spacing: 6) {
+                    RoleBadge(role: current)
+                    Text("current session")
+                        .font(.app(.caption))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+        }
+    }
+
+    private func stageRow(_ stage: RoleStage) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                RoleBadge(role: stage.role ?? "no role")
+                Image(systemName: "arrow.right")
+                    .font(.app(.caption2))
+                    .foregroundStyle(.tertiary)
+                RoleBadge(role: stage.handedOffTo)
+                Text(Self.date.string(from: stage.endedAt))
+                    .font(.app(.caption2))
+                    .foregroundStyle(.tertiary)
+                Spacer()
+                if let command = resumeCommand(stage) {
+                    Button {
+                        copy(command, toast: "Copied resume command")
+                    } label: {
+                        Image(systemName: "terminal")
+                            .font(.app(.caption))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy a command that resumes this stage's session in a terminal")
+                }
+                if let summary = stage.summary {
+                    Button {
+                        copy(summary, toast: "Copied summary")
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .font(.app(.caption))
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Copy summary")
+                }
+            }
+            Text(stage.summary ?? "No summary")
+                .font(.sessionDetail())
+                .foregroundStyle(stage.summary == nil ? .tertiary : .primary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(8)
+        .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func resumeCommand(_ stage: RoleStage) -> String? {
+        guard let sessionId = stage.sessionId else { return nil }
+        let path = card.link.worktreeLink?.path ?? card.link.projectPath
+        let resume = card.link.effectiveAssistant.resumeCommand(sessionId: sessionId, skipPermissions: false)
+        guard let path else { return resume }
+        let quoted = "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        return "cd \(quoted) && \(resume)"
+    }
+
+    private func copy(_ text: String, toast: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        onCopyToast?(toast)
     }
 }
 

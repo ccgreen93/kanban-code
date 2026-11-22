@@ -9,9 +9,10 @@ Roles are data. Each one is a markdown file; a single `transitions.json`
 says which roles may follow which. Adding a role means dropping in a file
 and adding one line to the map.
 
-> Status: roles can be picked, are stored on the card, set its model and
-> effort, prefix its first prompt and show as a badge. Hand-off between
-> roles, approval gates and PR rules come next (see "Roadmap").
+> Status: roles can be picked, set the card's model and effort, prefix its
+> first prompt and show as a badge. Workers hand off to the next role in a
+> fresh session; a control role can run the board. Approval in the Triage
+> view, gates and PR rules come next (see "Roadmap").
 
 ## Where roles live
 
@@ -56,6 +57,7 @@ Instructions for the worker, in any markdown you like.
 | `skill` | A skill the instructions use, for example `bmad-build`. Shown in the picker. |
 | `column` | Where a hand-off moves the card when the board uses **free placement** (`backlog`, `in_progress`, `in_review`, `done`, ...). Strict placement ignores it: columns follow activity there. |
 | `singleton` | `true` if only one card of this role should run at a time. Not enforced yet. |
+| `controls` | `true` for a control role: its card may hand off other cards (see "Control agent"). It gets no hand-off footer. |
 
 The model and effort fill in the dialog's pickers and can still be changed
 before launching. The card keeps what was picked, so resumes use it.
@@ -72,25 +74,95 @@ before launching. The card keeps what was picked, so resumes use it.
 # Task
 
 <the task, after the project's prompt template>
+
+# Earlier stages on this card        (after a hand-off)
+
+## build → review (2026-11-22 14:05)
+
+<the summary build handed off with>
+
+# When you are done
+
+<how to run `kanban role handoff`, and the next roles: auto ones to hand
+off to, ask ones to recommend before stopping>
 ```
 
-A prompt that already starts with the role header is not wrapped again.
+A prompt that is already wrapped (one recovered from a transcript) is
+unwrapped first, so roles never nest.
+
+## Hand-off
+
+When its stage is done, the worker commits and runs, inside its card:
+
+```bash
+kanban role handoff review - <<'END'
+Implemented X in a.swift and b.swift, tests pass. Risky: Y.
+END
+```
+
+Kanban Code checks the arrow in `transitions.json`, then:
+
+1. records the finished stage on the card: role, session, summary, time;
+2. switches the card's role, model and effort (and assistant, if the role
+   names one);
+3. ends the old session two seconds later, and starts a fresh one in the
+   same worktree with the next role's prompt, which carries every summary
+   so far;
+4. in free placement, moves the card to the next role's `column`.
+
+The card keeps its worktree, branch, pull requests, children and prompt.
+The new session does not see the old conversation, only the summaries, so
+roles should commit their work and write a summary the next role can
+start from.
+
+Finished stages are listed under **Role Stages** in the card's Prompt tab.
+Each one can copy a command that resumes its session in a terminal. The
+reconciler never links a past stage's session back onto the card.
+
+The human can also, from the card menu:
+
+- **Role**: set or clear the role without restarting (model and effort
+  apply from the next launch or resume);
+- **Hand Off To**: move to any role now, next roles listed first.
+
+`kanban subagent spawn --role <role>` starts a child in a role.
+
+## Control agent
+
+A role with `controls: true` runs the board instead of a stage. Its card
+(usually in the Agents section) may hand off other cards:
+
+```bash
+kanban role handoff review --card card_abc123 "Build finished but did not hand off."
+```
+
+It follows the same rules as a worker: only `auto` arrows. It may also give
+a first role to a started card that has none. The example
+[`control`](roles/examples/control.md) reads the board each pass, hands off
+cards that finished without handing off, nudges idle or stuck workers with
+queued prompts, and ends with the open decisions for the human. It never
+edits code, pushes or merges.
 
 ## Transitions
 
-`transitions.json` maps a role to the roles that may follow it. A plain
-name means the hand-off asks the human first; an object with
-`"mode": "auto"` lets the worker hand off without asking. A role with no
-entry, or an empty list, is terminal.
+`transitions.json` maps a role to the roles that may follow it. An object
+with `"mode": "auto"` lets the worker (or a control agent) hand off without
+asking. A plain name is an `ask` arrow: Kanban Code refuses it from an
+agent, which reports and stops, and the human hands off from the card menu.
+A role with no entry, or an empty list, is terminal.
 
 ```json
 {
-  "triage": ["spec", "build-lite", "build", "adhoc"],
-  "build": [{ "role": "review", "mode": "auto" }, "triage"],
-  "review": ["build", "merge"],
+  "triage": [{ "role": "build", "mode": "auto" }, "spec"],
+  "build": [{ "role": "review", "mode": "auto" }],
+  "review": [{ "role": "build", "mode": "auto" }, "merge"],
   "merge": []
 }
 ```
+
+The example map is all `auto`, for an unattended pipeline. The example
+roles still never push: the pipeline runs triage → build → review on its
+own and stops when the work is ready to push.
 
 The picker lists roles in pipeline order: walks from the Backlog roles
 first, then from roles nothing leads to (side roles), then the rest by name.
@@ -105,17 +177,19 @@ first, then from roles nothing leads to (side roles), then the rest by name.
   subagents are for side work.
 - **Transitions in one file**, not in each role, so a role can be added or
   shared without editing the others.
-- **Workers stop with drafts in full.** The example roles never push,
-  post or merge on their own: they show the exact text and wait for a yes.
-  Until gates exist (below) this rests on the instructions alone.
+- **A fresh session per role**, with summaries as the hand-off memory:
+  a clean context and the right model for each stage.
+- **Workers never push, post or merge on their own** in the example roles:
+  they write drafts in full. Until gates exist (below) this rests on the
+  instructions alone.
+- **No LLM supervisor is required.** The control role is optional, and has
+  no more authority than a worker.
 
 ## Roadmap
 
 1. ~~Role files, `Link.role`, picker, model and effort, badge.~~
-2. `kanban role handoff <next> "summary"`, run by the worker in its card:
-   checks the map, then relaunches the same card in a fresh session with
-   the next role (its model, effort and instructions plus the summary).
-   In free placement it also moves the card to the next role's column.
+2. ~~`kanban role handoff`, role stages, card menu, `--role` on spawn,
+   control role.~~
 3. `ask` hand-offs raise an attention request, answered in the Triage view.
 4. Gates, opt-in per role: `git push`, pull request writes and ticket
    writes need an approval in Kanban Code; merging a PR is always denied.
