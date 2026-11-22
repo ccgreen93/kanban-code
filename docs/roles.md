@@ -35,7 +35,7 @@ folder.
 ```markdown
 ---
 name: build
-description: Implement the ticket, verify it, draft the PR, stop before pushing.
+description: Implement the spec, verify it, push and open the PR, then hand to review.
 model: opus
 effort: high
 assistant: claude
@@ -171,8 +171,13 @@ the size triage gives the work item:
 The map enforces "spec before build" for agents: `build` is reachable only
 from `spec` (and back from `review`), and `build-lite` steps up to `spec`
 when an item turns out bigger than medium. An xlarge spec is split into
-stories that build works through in order. The example roles still never
-push: the pipeline stops when the work is ready to push.
+stories that build works through in order.
+
+`build-lite` and `build` push the card's branch and open the pull request;
+`review` pushes fixes and comments on the PR after each push. No role
+merges: `merge` checks the PR is ready and reports it, and the human
+merges. The roles push with a plain `git push`, never to the main branch,
+never forced.
 
 The picker lists roles in pipeline order: walks from the Backlog roles
 first, then from roles nothing leads to (side roles), then the rest by name.
@@ -189,9 +194,8 @@ first, then from roles nothing leads to (side roles), then the rest by name.
   shared without editing the others.
 - **A fresh session per role**, with summaries as the hand-off memory:
   a clean context and the right model for each stage.
-- **Workers never push, post or merge on their own** in the example roles:
-  they write drafts in full. Until gates exist (below) this rests on the
-  instructions alone.
+- **Workers push and open PRs; only the human merges.** Until gates exist
+  (below) the pushing rules rest on the instructions alone.
 - **No LLM supervisor is required.** The control role is optional, and has
   no more authority than a worker.
 
@@ -201,7 +205,9 @@ first, then from roles nothing leads to (side roles), then the rest by name.
 2. ~~`kanban role handoff`, role stages, card menu, `--role` on spawn,
    control role.~~
 3. `ask` hand-offs raise an attention request, answered in the Triage view.
-4. Gates, opt-in per role: `git push`, pull request writes and ticket
-   writes need an approval in Kanban Code; merging a PR is always denied.
+4. Gates in the `PreToolUse` hook, so the pushing rules hold even when an
+   instruction is ignored: merging or enabling auto-merge, force-pushing
+   and pushing to the main branch are denied for role cards. Per-role
+   approval for other writes stays opt-in.
 5. Rules on PR data the board already tracks: unresolved review threads,
    failing CI and conflicts queue a prompt to the card's worker.

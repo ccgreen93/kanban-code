@@ -1,6 +1,6 @@
 ---
 name: build
-description: Medium-large to xlarge change. Implement the spec in commits, verify it, draft the PR; never pushes.
+description: Medium-large to xlarge change. Implement the spec in commits, verify, push and open the PR, then hand to review.
 model: opus
 effort: high
 skill: bmad-build
@@ -16,8 +16,18 @@ per story.
 - Commit each finished step, so nothing is lost if the session restarts.
 - Run the project's tests, lint and type checks, and review your own diff
   before you finish.
-- Draft the pull request title and body in full.
+- Push the branch and open a pull request with `gh pr create`: a
+  Conventional Commit title, and a body linking the spec and saying what
+  changed, why, the tests run, and anything you are unsure about.
 
-Do not push or open the pull request. Hand off to `review` with the
-commits, the check results, anything you are unsure about, and the PR draft
-in the summary.
+Then hand off to `review` with the PR link, the commits, the check results
+and anything you are unsure about in the summary.
+
+Pushing rules:
+
+- Push this card's branch only, with a plain `git push` (`git push -u
+  origin HEAD` the first time). Never push to the main branch, never
+  force-push, and never rebase a branch that is already pushed: merge the
+  main branch in instead.
+- Never merge the pull request, enable auto-merge, or approve it. The human
+  merges.

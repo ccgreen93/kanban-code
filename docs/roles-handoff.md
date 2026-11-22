@@ -34,8 +34,9 @@ issues from Linear.
    side work.
 4. **A fresh session per role** to start with; same-session hand-off
    (model switch plus self-compact) maybe later.
-5. **Gates are opt-in per role**. Day one: `git push`, PR open, comment,
-   review and resolve, ticket writes. `gh pr merge` is always denied.
+5. **Gates** (revised 2026-11-22): roles push and open PRs without asking.
+   Hard denials for role cards: `gh pr merge` / auto-merge, force-push,
+   push to the main branch. Approval for other writes stays opt-in per role.
 6. **No LLM supervisor required**: rules in the daemon plus the Triage
    view. An optional control role (2026-11-22) runs the board as a card,
    with no more authority than a worker: `auto` arrows only.
@@ -43,8 +44,9 @@ issues from Linear.
    or `ask` per edge.
 8. Triage is the role imported cards start in; adhoc is for manual tasks
    with no ticket.
-9. Automated pipeline (2026-11-22): the example map is all `auto`. Pushing
-   stays a human step until gates (step 4).
+9. Automated pipeline (2026-11-22): the example map is all `auto`.
+   build-lite and build push and open the PR; review pushes fixes and
+   comments; merge reports ready; the human merges.
 10. Routing by size (2026-11-22): triage sizes the item. small,
     small-medium and medium go to build-lite; medium-large, large and
     xlarge go to spec then build. Agents reach build only through spec.
