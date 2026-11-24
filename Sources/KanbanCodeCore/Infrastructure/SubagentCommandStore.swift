@@ -19,6 +19,10 @@ public enum SubagentCommandOperation: String, Codable, Sendable {
     /// `kanban role handoff`: the card's own agent moves the card to its
     /// next role. `role` names it, `prompt` carries the summary.
     case roleHandoff
+    /// `kanban new`: any card starts an independent top-level card (a new
+    /// session for a separate piece of work). Unlike `spawn` it has no owner,
+    /// shares no checkout by default, and is not bound by the subagent depth.
+    case createCard
 }
 
 /// Resolves the worktree a spawn asked for.
@@ -51,6 +55,33 @@ public enum SubagentWorktree {
     }
 }
 
+/// Who may start new cards with `kanban new`, and how many.
+///
+/// A card started by another card cannot start more unless its role controls
+/// the board, so a looping or misled worker cannot fan out into an unbounded
+/// number of sessions. Every requester, controllers included, is capped on the
+/// cards it started that are still active.
+public enum NewCardPolicy {
+    public static let maximumActivePerRequester = 8
+
+    public static func refusal(
+        requester: Link,
+        requesterControls: Bool,
+        links: [Link]
+    ) -> String? {
+        if requester.startedByCardId != nil, !requesterControls {
+            return "This card was itself started by another card, so it may not start more. "
+                + "Report the work to the card that started you instead."
+        }
+        let active = links.filter { $0.startedByCardId == requester.id && !$0.manuallyArchived }.count
+        if active >= maximumActivePerRequester {
+            return "You already have \(active) active cards you started (the limit is "
+                + "\(maximumActivePerRequester)). Wait for some to finish or archive them."
+        }
+        return nil
+    }
+}
+
 public struct SubagentCommandRequest: Codable, Sendable, Equatable {
     public let id: String
     public let operation: SubagentCommandOperation
@@ -75,6 +106,10 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
     public let worktreeName: String?
     /// Role a spawned child starts in, or the role a hand-off moves to.
     public let role: String?
+    /// Folder a new card works in. Absent means the requesting card's project.
+    public let projectPath: String?
+    /// A new card created but not started: it waits in the backlog.
+    public let backlog: Bool?
 
     public init(
         id: String,
@@ -91,7 +126,9 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         sessionId: String? = nil,
         sessionPath: String? = nil,
         worktreeName: String? = nil,
-        role: String? = nil
+        role: String? = nil,
+        projectPath: String? = nil,
+        backlog: Bool? = nil
     ) {
         self.id = id
         self.operation = operation
@@ -108,6 +145,8 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         self.sessionPath = sessionPath
         self.worktreeName = worktreeName
         self.role = role
+        self.projectPath = projectPath
+        self.backlog = backlog
     }
 }
 

@@ -37,7 +37,8 @@ export type SubagentOperation =
   | "relinkSession"
   | "setModel"
   | "setContextThreshold"
-  | "roleHandoff";
+  | "roleHandoff"
+  | "createCard";
 
 export interface SubagentCommandRequest {
   id: string;
@@ -64,6 +65,10 @@ export interface SubagentCommandRequest {
   worktreeName?: string;
   /** Role a spawned child starts in, or the role a hand-off moves to. */
   role?: string;
+  /** Folder a new card works in. Omitted means the requesting card's project. */
+  projectPath?: string;
+  /** A new card that waits in the backlog instead of starting. */
+  backlog?: boolean;
 }
 
 export interface SubagentCommandResponse {
@@ -306,4 +311,55 @@ export async function submitSubagentRequest(
   throw new Error(
     `Kanban Code did not process the subagent command within ${Math.ceil(timeoutMs / 1_000)} seconds.`
   );
+}
+
+export interface NewCardOptions {
+  name?: string;
+  project?: string;
+  role?: string;
+  assistant?: string;
+  model?: string;
+  worktree?: boolean;
+  worktreeName?: string;
+  backlog?: boolean;
+}
+
+/**
+ * Turns `kanban new`'s arguments into the request the app acts on. Kept apart
+ * from the command so the argument rules can be tested without a card session.
+ * `--worktree` is a plain flag with a separate `--worktree-name`: an optional
+ * value would swallow the task text that follows it.
+ */
+export function buildNewCardFields(
+  prompt: string,
+  opts: NewCardOptions,
+  resolvePath: (path: string) => string
+): Omit<Partial<SubagentCommandRequest>, "id" | "operation" | "createdAt" | "parentCardId"> {
+  const task = prompt.trim();
+  if (!task) throw new Error("A task is required. Pass it as arguments or use `-` with stdin.");
+  const wantsWorktree = Boolean(opts.worktree) || Boolean(opts.worktreeName?.trim());
+  if (opts.backlog && wantsWorktree) {
+    throw new Error("A backlog card cannot have its own worktree yet. Start it, or drop --worktree.");
+  }
+  let assistant: CodingAssistant | undefined;
+  if (opts.assistant) {
+    if (opts.assistant !== "claude" && opts.assistant !== "codex" && opts.assistant !== "gemini") {
+      throw new Error(
+        `Unknown assistant "${opts.assistant}". Use claude, codex, or gemini; leave it out for the role's, else claude.`
+      );
+    }
+    assistant = opts.assistant;
+  }
+  const name = opts.name?.trim() || undefined;
+  const handle = slugifyDisplay(name ?? task.split("\n")[0] ?? "") || "task";
+  return {
+    name,
+    prompt: task,
+    assistant,
+    model: opts.model?.trim() || undefined,
+    role: opts.role?.trim() || undefined,
+    projectPath: opts.project ? resolvePath(opts.project) : undefined,
+    worktreeName: requestedWorktreeName(opts.worktreeName?.trim() || (opts.worktree ? true : undefined), handle),
+    backlog: opts.backlog ? true : undefined,
+  };
 }

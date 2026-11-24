@@ -7,6 +7,7 @@ import {
   defaultNotify,
   appliesModelSwitchDirectly,
   assertOwnedSubagent,
+  buildNewCardFields,
   buildSubagentPrompt,
   modelSwitchCommand,
   needsModelSwitchConfirmation,
@@ -226,6 +227,63 @@ describe("subagent worktree opt-in", () => {
       worktreeName: requestedWorktreeName(true, "parser-bug"),
     });
     assert.equal(request.worktreeName, "parser-bug");
+  });
+});
+
+describe("new card request", () => {
+  test("carries project, role and backlog through to the app without an owner", () => {
+    const request = makeSubagentRequest("createCard", "root", {
+      name: "fix-login",
+      prompt: "fix it",
+      role: "build",
+      projectPath: "/tmp/project",
+      worktreeName: requestedWorktreeName(true, "fix-login"),
+      backlog: true,
+    });
+    assert.equal(request.operation, "createCard");
+    assert.equal(request.parentCardId, "root");
+    assert.equal(request.projectPath, "/tmp/project");
+    assert.equal(request.worktreeName, "fix-login");
+    assert.equal(request.role, "build");
+    assert.equal(request.backlog, true);
+  });
+});
+
+describe("kanban new arguments", () => {
+  const abs = (p: string) => `/abs/${p}`;
+
+  test("a plain --worktree names the worktree after the card and leaves the task alone", () => {
+    const fields = buildNewCardFields("bump the provider", { worktree: true, name: "Fix Login" }, abs);
+    assert.equal(fields.worktreeName, "fix_login");
+    assert.equal(fields.prompt, "bump the provider");
+  });
+
+  test("without a name the worktree comes from the task's first line", () => {
+    const fields = buildNewCardFields("Bump the provider\nmore", { worktree: true }, abs);
+    assert.equal(fields.worktreeName, "bump_the_provider");
+  });
+
+  test("--worktree-name picks the name", () => {
+    assert.equal(buildNewCardFields("t", { worktreeName: "my-wt" }, abs).worktreeName, "my-wt");
+  });
+
+  test("no worktree flag means the project checkout", () => {
+    assert.equal(buildNewCardFields("t", {}, abs).worktreeName, undefined);
+  });
+
+  test("a backlog card cannot ask for a worktree", () => {
+    assert.throws(() => buildNewCardFields("t", { backlog: true, worktree: true }, abs), /backlog/);
+    assert.throws(() => buildNewCardFields("t", { backlog: true, worktreeName: "x" }, abs), /backlog/);
+  });
+
+  test("inherit is not an assistant for a new card", () => {
+    assert.throws(() => buildNewCardFields("t", { assistant: "inherit" }, abs), /Unknown assistant/);
+    assert.equal(buildNewCardFields("t", { assistant: "codex" }, abs).assistant, "codex");
+  });
+
+  test("an empty task is refused and the project path is resolved", () => {
+    assert.throws(() => buildNewCardFields("   ", {}, abs), /task is required/);
+    assert.equal(buildNewCardFields("t", { project: "proj" }, abs).projectPath, "/abs/proj");
   });
 });
 

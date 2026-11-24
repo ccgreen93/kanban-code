@@ -113,6 +113,7 @@ import {
   currentCardOrThrow,
   descendantIds,
   kanbanCodeIsRunning,
+  buildNewCardFields,
   makeSubagentRequest,
   missingForkSessionError,
   appliesModelSwitchDirectly,
@@ -1878,6 +1879,63 @@ parentCmd
         makeSubagentRequest("archive", parent.id, { cardId: child.id })
       );
       if (!response.ok) throw new Error(response.error ?? "Kanban Code could not archive this subagent.");
+    } catch (error) {
+      console.error(String(error instanceof Error ? error.message : error));
+      process.exitCode = 1;
+    }
+  });
+
+program
+  .command("new")
+  .alias("create")
+  .description("Start a new, independent card (session) for a separate piece of work")
+  .argument("[prompt...]", "Task text, or pass - and pipe/heredoc stdin")
+  .option("--name <name>", "Card title; defaults to the first line of the task")
+  .option("--project <path>", "Folder the card works in; defaults to this card's project")
+  .option("--role <role>", "Start the card in a role from ~/.kanban-code/roles (its instructions, model and effort)")
+  .option("--assistant <assistant>", "claude, codex, or gemini; defaults to the role's, else claude")
+  .option("--model <model>", "Assistant model alias or full model name")
+  .option("--worktree", "Give the card its own worktree instead of the project checkout, named after the card")
+  .option("--worktree-name <name>", "Like --worktree, with a name of your choosing")
+  .option("--backlog", "Create the card in the backlog without starting a session")
+  .option("-j, --json", "Output as JSON")
+  .addHelpText(
+    "after",
+    `
+
+Unlike \`kanban subagent spawn\`, the new card is not a child of this one: it has
+no owner, is not limited by the subagent depth, and appears on the board as its
+own task. Use it to hand a separate piece of work to a fresh session. Commands
+must run from a card's primary tmux session.
+
+  kanban new --name fix-login --role build - <<'EOF'
+  The login form rejects valid emails with a plus sign. Fix it and add a test.
+  EOF
+
+  kanban new --project ~/dev/cg/homelab --worktree "bump the pulumi provider"
+
+Pass --backlog to park the task for later instead of starting it (a backlog
+card cannot take --worktree). The new card is told which card started it.
+
+A card that was itself started by another card cannot start more unless its
+role controls the board, and no card may have more than 8 active cards it
+started. Without --project the card works in this card's project folder.
+`
+  )
+  .action(async (promptArgs: string[], opts) => {
+    try {
+      const links = readLinks();
+      const caller = currentCardOrThrow(links);
+      const prompt = await readSubagentPromptFromArgsOrStdin(promptArgs);
+      const response = await submitSubagentRequest(
+        makeSubagentRequest("createCard", caller.id, buildNewCardFields(prompt, opts, resolve))
+      );
+      if (!response.ok) throw new Error(response.error ?? "Kanban Code rejected the new card.");
+      if (opts.json) {
+        output(response, { json: true });
+      } else {
+        console.log(`${opts.backlog ? "Created backlog card" : "Started card"} ${response.cardId}`);
+      }
     } catch (error) {
       console.error(String(error instanceof Error ? error.message : error));
       process.exitCode = 1;
