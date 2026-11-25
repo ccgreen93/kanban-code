@@ -1,0 +1,83 @@
+{
+  "triage": [
+    {
+      "role": "build-lite",
+      "mode": "auto"
+    },
+    {
+      "role": "spec",
+      "mode": "auto"
+    },
+    {
+      "role": "adhoc",
+      "mode": "auto"
+    }
+  ],
+  "adhoc": [
+    {
+      "role": "build-lite",
+      "mode": "auto"
+    },
+    {
+      "role": "spec",
+      "mode": "auto"
+    }
+  ],
+  "spec": [
+    {
+      "role": "build",
+      "mode": "auto"
+    }
+  ],
+  "build-lite": [
+    {
+      "role": "review",
+      "mode": "auto"
+    },
+    {
+      "role": "spec",
+      "mode": "auto"
+    }
+  ],
+  "build": [
+    {
+      "role": "review",
+      "mode": "auto"
+    },
+    {
+      "role": "spec",
+      "mode": "auto"
+    },
+    {
+      "role": "triage",
+      "mode": "auto"
+    }
+  ],
+  "review": [
+    {
+      "role": "build",
+      "mode": "auto"
+    },
+    {
+      "role": "build-lite",
+      "mode": "auto"
+    },
+    {
+      "role": "merge",
+      "mode": "auto"
+    }
+  ],
+  "merge": [
+    {
+      "role": "review",
+      "mode": "auto"
+    }
+  ],
+  "pr-review": [],
+  "pr-watch": [
+    {
+      "role": "review",
+      "mode": "auto"
+    }
+  ]
+}

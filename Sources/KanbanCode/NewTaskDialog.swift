@@ -10,10 +10,10 @@ struct NewTaskDialog: View {
     /// `globalRemoteSettings` is ignored.
     var remoteOptions: RemoteLaunchOptions?
     var enabledAssistants: [CodingAssistant] = CodingAssistant.allCases
-    /// (prompt, projectPath, title, startImmediately, images) — creates task without an assistant set
-    var onCreate: (String, String?, String?, Bool, [ImageAttachment]) -> Void = { _, _, _, _, _ in }
-    /// (prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort) — creates and launches directly (skips LaunchConfirmation)
-    var onCreateAndLaunch: (String, String?, String?, Bool, Bool, Bool, String?, [ImageAttachment], CodingAssistant, String?, String?, String?) -> Void = { _, _, _, _, _, _, _, _, _, _, _, _ in }
+    /// (prompt, projectPath, title, startImmediately, images, role) — creates task without an assistant set
+    var onCreate: (String, String?, String?, Bool, [ImageAttachment], Role?) -> Void = { _, _, _, _, _, _ in }
+    /// (prompt, projectPath, title, createWorktree, runRemotely, skipPermissions, commandOverride, images, assistant, apiServiceId, model, effort, role) — creates and launches directly (skips LaunchConfirmation)
+    var onCreateAndLaunch: (String, String?, String?, Bool, Bool, Bool, String?, [ImageAttachment], CodingAssistant, String?, String?, String?, Role?) -> Void = { _, _, _, _, _, _, _, _, _, _, _, _, _ in }
     /// Boxd machine the user picked. Called just before `onCreateAndLaunch`
     /// when the launch runs on boxd.
     var onMachineChoice: (BoxdMachineChoice) -> Void = { _ in }
@@ -49,6 +49,10 @@ struct NewTaskDialog: View {
     @AppStorage("newTaskCustomModel") private var customModel = ""
     /// Last effort picked in this dialog: "" = assistant default.
     @AppStorage("newTaskEffort") private var effortChoice = ""
+    /// Roles from `~/.kanban-code/roles/`, read when the dialog opens.
+    @State private var roleLibrary = RoleLibrary()
+    /// Picked role name, "" for none. Not remembered between tasks.
+    @State private var roleChoice = ""
 
     private static let customPathSentinel = "__custom__"
     private static let customModelSentinel = "__custom__"
@@ -94,6 +98,10 @@ struct NewTaskDialog: View {
                         .textFieldStyle(.roundedBorder)
                         .font(.app(.caption))
                 }
+            }
+
+            if !roleLibrary.isEmpty {
+                rolePicker
             }
 
             // Assistant picker (when multiple enabled)
@@ -225,6 +233,7 @@ struct NewTaskDialog: View {
                 selectedAssistant = first
             }
             applyProjectDefaults()
+            roleLibrary = RoleLibrary.load()
             command = commandPreview
             titleFocused = true
         }
@@ -264,6 +273,49 @@ struct NewTaskDialog: View {
             // Reset to default service for the newly selected assistant
             selectedServiceId = defaultAPIServiceIds[selectedAssistant.rawValue]
         }
+    }
+
+    // MARK: - Role
+
+    @ViewBuilder
+    private var rolePicker: some View {
+        Picker("Role", selection: $roleChoice) {
+            Text("None").tag("")
+            ForEach(roleLibrary.roles) { role in
+                Text(role.skill.map { "\(role.name) (\($0))" } ?? role.name).tag(role.name)
+            }
+        }
+        .help(selectedRole?.description ?? "Preset instructions, model and effort from ~/.kanban-code/roles")
+        .onChange(of: roleChoice) { applyRoleDefaults() }
+        if let description = selectedRole?.description {
+            Text(description)
+                .font(.app(.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var selectedRole: Role? { roleLibrary.role(named: roleChoice) }
+
+    /// A picked role fills in its assistant, model and effort. They stay
+    /// editable, and the card keeps whatever is picked at submit.
+    private func applyRoleDefaults() {
+        guard let role = selectedRole else { return }
+        if let assistant = role.assistant, enabledAssistants.contains(assistant) {
+            selectedAssistant = assistant
+        }
+        if let model = role.model {
+            if selectedAssistant.modelAliases.contains(model) {
+                modelChoice = model
+            } else {
+                modelChoice = Self.customModelSentinel
+                customModel = model
+            }
+        } else {
+            modelChoice = ""
+        }
+        effortChoice = role.effort.flatMap { selectedAssistant.effortLevels.contains($0) ? $0 : nil } ?? ""
+        if !commandEdited { command = commandPreview }
     }
 
     // MARK: - Model & effort
@@ -433,10 +485,11 @@ struct NewTaskDialog: View {
                 selectedAssistant,
                 selectedServiceId,
                 resolvedModel,
-                resolvedEffort
+                resolvedEffort,
+                selectedRole
             )
         } else {
-            onCreate(prompt, proj, titleOrNil, false, images)
+            onCreate(prompt, proj, titleOrNil, false, images, selectedRole)
         }
         isPresented = false
     }

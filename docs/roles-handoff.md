@@ -1,0 +1,89 @@
+# Handoff: card roles (in progress)
+
+Card roles are being built on the fork in steps, each a PR into `cg-main`.
+The user-facing doc is [`docs/roles.md`](roles.md); this note keeps the
+decisions and what is left.
+
+## ⚠️ This repo is public
+
+`ccgreen93/kanban-code` is a public fork. **Do not commit anything copied
+from the work tool** that inspired this: not its role instructions or
+prompts, not its name, not ticket keys, repo names or anything else from
+work.
+
+- Real role definitions live **outside the repo** in `~/.kanban-code/roles/`.
+- The repo only gets the loader and generic example roles written from
+  scratch (`docs/roles/examples/`).
+
+## Goal
+
+Each role is a worker session with a preset model, effort and
+instructions, and roles hand work to each other. Line them up with the
+board's columns, use BMAD skills where they fit, and (for value3) take
+issues from Linear.
+
+## Decisions (agreed 2026-11-19)
+
+1. **The role is a card field (`Link.role`); columns stay automatic** in
+   strict placement. In **free placement** a hand-off moves the card to
+   the next role's `column` (triage → Backlog; spec, build-lite, build →
+   In Progress; review → In Review; merge → Done).
+2. **The worker triggers hand-offs** (`kanban role handoff`); the human
+   approves only `ask` edges.
+3. **One card per work item**, roles in sequence on it; subagents only for
+   side work.
+4. **A fresh session per role** to start with; same-session hand-off
+   (model switch plus self-compact) maybe later.
+5. **Gates** (revised 2026-11-22): roles push and open PRs without asking.
+   Hard denials for role cards: `gh pr merge` / auto-merge, force-push,
+   push to the main branch. Approval for other writes stays opt-in per role.
+6. **No LLM supervisor required**: rules in the daemon plus the Triage
+   view. An optional control role (2026-11-22) runs the board as a card,
+   with no more authority than a worker: `auto` arrows only.
+7. **One `transitions.json`**, not `next` in each role file, with `auto`
+   or `ask` per edge.
+8. Triage is the role imported cards start in; adhoc is for manual tasks
+   with no ticket.
+9. Automated pipeline (2026-11-22): the example map is all `auto`.
+   build-lite and build push and open the PR; review pushes fixes and
+   comments; merge reports ready; the human merges.
+10. Routing by size (2026-11-22): triage sizes the item. small,
+    small-medium and medium go to build-lite; medium-large, large and
+    xlarge go to spec then build. Agents reach build only through spec.
+
+## Steps
+
+1. **Done (branch `cg/roles`):** role loader (`RoleLibrary`, `Role`,
+   `RoleTransitions`), `Link.role` (synced and kept by the reconciler),
+   role picker in the New Task dialog that fills model, effort and
+   assistant, role instructions put ahead of the task at launch
+   (`PromptBuilder.wrap`), badge on cards, `role:` and `effort:` in
+   `kanban list/show`, generic example roles.
+2. **Done (branch `cg/roles-handoff`):** `kanban role handoff` (worker,
+   or control agent with `--card`), `RoleHandoff` rules, `Link.roleHistory`
+   (Role Stages in the Prompt tab, resume command per stage; reconciler
+   skips past sessions), Role / Hand Off To in the card menu, `--role` on
+   `subagent spawn`, `controls: true` and the example `control` role,
+   all-auto example map.
+3. `ask` edges as `AttentionRequest`s answered in the Triage view.
+4. **Done (2026-11-25):** gates as a stage of the vault `PreToolUse` hook
+   calling `kanban role gate` (`RoleGateClassifier`, `RoleGatePolicy`,
+   `gates.json`). Merge, approve, deploy, force-push and protected pushes
+   default to deny; `ask` holds the command on the card (`Link.pendingGate`)
+   until the human approves it once or rejects it, from the badge or menu.
+5. Rules for unresolved review threads, failing CI and conflicts, as
+   queued prompts from the daemon, each firing once per condition.
+6. Linear as `LinkSource.linearIssue` (separate track), key in `kv`.
+
+## Still open
+
+- What pr-watch should become once step 5's rules exist (probably
+  replaced by them).
+- Whether the role picker should also live on the card (change role
+  without a hand-off).
+- `singleton` is parsed but not enforced.
+
+Build and test without Xcode: `swift test` with
+`-Xswiftc -F<CLT>/Library/Developer/Frameworks` plus rpaths to that folder
+and `<CLT>/Library/Developer/usr/lib`, where
+`CLT=/Library/Developer/CommandLineTools`.

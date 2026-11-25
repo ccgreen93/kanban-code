@@ -47,6 +47,8 @@ public enum LinkSync {
         SharedField("parentCardId", \.parentCardId),
         SharedField("modelOverride", \.modelOverride),
         SharedField("effortOverride", \.effortOverride),
+        SharedField("role", \.role),
+        SharedField("roleHistory", \.roleHistory),
         SharedField("selfCompactContextThresholdTokens", \.selfCompactContextThresholdTokens),
         SharedField("prLinks", \.prLinks),
         SharedField("issueLink", \.issueLink),
@@ -95,6 +97,8 @@ public enum LinkSync {
         dst.tmuxLink = src.tmuxLink
         dst.worktreeLink = src.worktreeLink
         dst.queuedPrompts = src.queuedPrompts
+        dst.pendingGate = src.pendingGate
+        dst.gateAllowances = src.gateAllowances
         dst.discoveredBranches = src.discoveredBranches
         dst.discoveredRepos = src.discoveredRepos
         dst.isRemote = src.isRemote
@@ -120,6 +124,8 @@ public enum LinkSync {
             && a.tmuxLink == b.tmuxLink
             && a.worktreeLink == b.worktreeLink
             && a.queuedPrompts == b.queuedPrompts
+            && a.pendingGate == b.pendingGate
+            && a.gateAllowances == b.gateAllowances
             && a.discoveredBranches == b.discoveredBranches
             && a.discoveredRepos == b.discoveredRepos
             && a.isRemote == b.isRemote
@@ -137,7 +143,7 @@ public enum LinkSync {
     static var sharedFieldNames: Set<String> { Set(sharedFields.map(\.name)) }
     static let ownedFieldNames: Set<String> = [
         "projectPath", "source", "createdAt", "lastActivity", "sessionLink", "tmuxLink", "worktreeLink",
-        "queuedPrompts", "discoveredBranches", "discoveredRepos", "isRemote", "remote", "apiServiceId",
+        "queuedPrompts", "pendingGate", "gateAllowances", "discoveredBranches", "discoveredRepos", "isRemote", "remote", "apiServiceId",
         "isLaunching", "launchedAt", "headless", "ownerMachine", "migrating",
     ]
     /// Per-machine fields that never travel, plus the sync metadata.

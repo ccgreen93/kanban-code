@@ -52,6 +52,14 @@ struct CardActionEnvironment {
     var isSharedMachine: (String) -> Bool
     /// Set or clear a card's priority.
     var setPriority: (_ cardId: String, _ priority: CardPriority?) -> Void = { _, _ in }
+    /// Roles from `~/.kanban-code/roles/`. Empty leaves the role items out.
+    var roles = RoleLibrary()
+    /// Give a card a role, or none, without restarting it.
+    var setRole: (_ cardId: String, _ role: String?) -> Void = { _, _ in }
+    /// End the card's session and start a fresh one in another role.
+    var handOff: (_ cardId: String, _ role: String) -> Void = { _, _ in }
+    /// Approve or reject the command the role gate holds on a card.
+    var resolveGate: (_ cardId: String, _ approved: Bool) -> Void = { _, _ in }
 
     @MainActor
     static func live(for card: KanbanCodeCard) -> CardActionEnvironment {
@@ -76,6 +84,27 @@ struct CardActionEnvironment {
             isSharedMachine: { AppServices.sshTargets[$0] != nil },
             setPriority: { cardId, priority in
                 AppComposition.shared.store.dispatch(.setCardPriority(cardId: cardId, priority: priority))
+            },
+            roles: RoleLibraryCache.shared.current,
+            setRole: { cardId, role in AppComposition.shared.engine.setRole(cardId: cardId, to: role) },
+            handOff: { cardId, role in
+                Task { @MainActor in
+                    do {
+                        try await AppComposition.shared.engine.handOffRole(
+                            cardId: cardId, to: role,
+                            summary: "Handed off by the human from the card menu.",
+                            requester: .human
+                        )
+                    } catch {
+                        let alert = NSAlert()
+                        alert.messageText = "Could not hand off to \(role)"
+                        alert.informativeText = error.localizedDescription
+                        alert.runModal()
+                    }
+                }
+            },
+            resolveGate: { cardId, approved in
+                AppComposition.shared.engine.resolveRoleGate(cardId: cardId, approved: approved)
             }
         )
     }
@@ -276,7 +305,23 @@ struct CardActionCatalog {
                 ))
             }
         }
+        if let gate = card.link.pendingGate {
+            let cardId = card.id
+            items.append(CardActionItem(
+                id: "gate.approve", title: "Approve: \(gate.action.label.capitalizedFirst)",
+                icon: "checkmark.shield", paletteTitle: "Approve Held Command",
+                kind: .perform { environment.resolveGate(cardId, true) }
+            ))
+            items.append(CardActionItem(
+                id: "gate.reject", title: "Reject Held Command", icon: "xmark.shield",
+                kind: .perform { environment.resolveGate(cardId, false) }
+            ))
+        }
         items.append(priorityItem)
+        if !environment.roles.isEmpty {
+            items.append(roleItem)
+            if let handOffItem { items.append(handOffItem) }
+        }
         items.append(compactSettingsItem)
         if actions.subagentCount > 0 {
             items.append(CardActionItem(
@@ -291,6 +336,59 @@ struct CardActionCatalog {
             ))
         }
         return items
+    }
+
+    /// Sets the role without a restart: the model and effort apply from the
+    /// next launch or resume.
+    private var roleItem: CardActionItem {
+        let selected = card.link.role
+        let cardId = card.id
+        var children = environment.roles.roles.map { role in
+            CardActionItem(
+                id: "role.\(role.name)", title: role.name,
+                isChecked: selected == role.name,
+                kind: .perform { environment.setRole(cardId, role.name) }
+            )
+        }
+        children.append(CardActionItem(
+            id: "role.none", title: "No Role", paletteTitle: "None",
+            isChecked: selected == nil, dividerBefore: true,
+            kind: .perform { environment.setRole(cardId, nil) }
+        ))
+        return CardActionItem(
+            id: "role", title: selected.map { "Role · \($0)" } ?? "Role",
+            icon: "person.crop.rectangle", paletteTitle: "Role",
+            kind: .submenu(children)
+        )
+    }
+
+    /// Ends the session and starts the chosen role fresh on the same card.
+    /// The role's next roles come first; the human may pick any other.
+    private var handOffItem: CardActionItem? {
+        let link = card.link
+        guard link.sessionLink != nil || link.tmuxLink != nil, link.remote == nil, !link.isRemote else { return nil }
+        let cardId = card.id
+        let library = environment.roles
+        let next = link.role.map { library.transitions.next(after: $0).map(\.role) } ?? []
+        let nextRoles = next.compactMap { library.role(named: $0) }
+        let others = library.roles.filter { !next.contains($0.name) }
+        var children: [CardActionItem] = nextRoles.map { role in
+            CardActionItem(
+                id: "handoff.\(role.name)", title: role.name,
+                kind: .perform { environment.handOff(cardId, role.name) }
+            )
+        }
+        children += others.enumerated().map { index, role in
+            CardActionItem(
+                id: "handoff.\(role.name)", title: role.name,
+                dividerBefore: index == 0 && !nextRoles.isEmpty,
+                kind: .perform { environment.handOff(cardId, role.name) }
+            )
+        }
+        return CardActionItem(
+            id: "handoff", title: "Hand Off To", icon: "arrow.right.circle",
+            paletteTitle: "Hand Off To", kind: .submenu(children)
+        )
     }
 
     private var priorityItem: CardActionItem {
@@ -513,4 +611,8 @@ struct CardActionCatalog {
         }
         return [delete]
     }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }

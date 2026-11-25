@@ -16,6 +16,13 @@ public enum SubagentCommandOperation: String, Codable, Sendable {
     /// Retune a card's compaction schedule when the work turns out bigger or
     /// smaller than the goal it was spawned with.
     case setContextThreshold
+    /// `kanban role handoff`: the card's own agent moves the card to its
+    /// next role. `role` names it, `prompt` carries the summary.
+    case roleHandoff
+    /// `kanban role gate`, the PreToolUse hook of a role card: may it run
+    /// `prompt`? `branch` is its checkout's branch. Answered `ok`, or with
+    /// the refusal or hold as the error.
+    case roleGate
 }
 
 /// Resolves the worktree a spawn asked for.
@@ -70,6 +77,10 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
     /// costs a full checkout and most children are working on the same branch
     /// as the parent anyway.
     public let worktreeName: String?
+    /// Role a spawned child starts in, or the role a hand-off moves to.
+    public let role: String?
+    /// Current branch of the checkout a gated command runs in.
+    public let branch: String?
 
     public init(
         id: String,
@@ -85,7 +96,9 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         contextThresholdTokens: Int? = nil,
         sessionId: String? = nil,
         sessionPath: String? = nil,
-        worktreeName: String? = nil
+        worktreeName: String? = nil,
+        role: String? = nil,
+        branch: String? = nil
     ) {
         self.id = id
         self.operation = operation
@@ -101,6 +114,8 @@ public struct SubagentCommandRequest: Codable, Sendable, Equatable {
         self.sessionId = sessionId
         self.sessionPath = sessionPath
         self.worktreeName = worktreeName
+        self.role = role
+        self.branch = branch
     }
 }
 

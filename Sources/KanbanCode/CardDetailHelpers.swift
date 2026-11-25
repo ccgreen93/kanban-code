@@ -195,7 +195,8 @@ enum DetailTab: String, CaseIterable {
         var tabs: [DetailTab] = [.terminal, .history]
         if card.link.issueLink != nil { tabs.append(.issue) }
         if !card.link.prLinks.isEmpty { tabs.append(.pullRequest) }
-        if card.link.promptBody != nil && card.link.issueLink == nil { tabs.append(.prompt) }
+        let hasRoleStages = card.link.roleHistory?.isEmpty == false
+        if (card.link.promptBody != nil && card.link.issueLink == nil) || hasRoleStages { tabs.append(.prompt) }
         return tabs
     }
 

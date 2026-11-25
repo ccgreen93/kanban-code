@@ -16,6 +16,7 @@ kanban sessions                      # all live tmux sessions
 kanban subagent spawn --handle x "goal"   # delegate to a fresh child session
 kanban subagent fork --handle y "goal"    # delegate with a copy of your transcript
 kanban subagent list                 # your children, with context usage + pane peek
+kanban role handoff review - <<'EOF' # role cards: hand the card to the next role (see Roles)
 kanban subagent model <card> opus    # switch an owned child to another model
 kanban parent dm "progress update"   # report to the card that owns you
 kanban send <card> "msg" --mode ...  # steer (default) | queue | interrupt
@@ -157,6 +158,16 @@ kanban channel send standup "PR #42 merged. unblocks anyone waiting on the auth 
 - `kanban self-compact - <<'EOF' … EOF` — compact your own session and hand yourself a post-compact continuation message. Always pass that handoff; without it you wake up with only the digest.
 - `kanban reply <conversation> [--title "<title>"] "<text>"` (or `-` for stdin): answer a prompt that arrived with a `[conversation swift-otter ...]` header. The header line tells you the exact command. `kanban conversation list|new|show|title` manages the card's conversations; `--card <card>` acts on another card. See docs/conversations.md.
 - Read `kanban --help` in full. Do not pipe it through `head` or `tail`; the command list continues past the first screen.
+
+## Roles
+
+A card can have a **role** (`kanban show` prints `role:`). Its first prompt starts with `# Role: <name>` and ends with `# When you are done`, which lists the roles you may hand off to. Details: docs/roles.md in the Kanban Code repo.
+
+- **Hand off when your stage is done.** Commit first, then run, inside your card: `kanban role handoff <next> - <<'EOF'` with a summary the next role can start from, then `EOF`. Your session ends a few seconds later and a fresh one starts in the next role on the same card, worktree and branch. It sees only the task and the summaries, not this conversation, so put what matters in the summary.
+- **Only `auto` arrows.** An arrow marked as needing the human is refused: recommend it in your report and stop.
+- **Gates.** On a role card, pushing your branch and writing to your PR are allowed. Merging, approving, deploying or publishing, force-pushing and pushing to main are usually refused. A refused command fails with "Refused by the Kanban Code role gate"; report what you wanted to do and stop. Do not look for another way to run it (a script, the API, another tool).
+- **Held commands.** "Held by the Kanban Code role gate" means the human was asked on the card. Stop and wait. If they approve, you get a message: run the same command again, exactly as before. If they reject it, do not run it.
+- `kanban subagent spawn --role <role> --handle x "goal"` starts a child in a role.
 
 ## Secrets (kv)
 
