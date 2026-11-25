@@ -74,6 +74,9 @@ extension MasterEngine {
         if request.operation == .roleHandoff {
             return try await roleHandoff(request)
         }
+        if request.operation == .roleGate {
+            return try checkRoleGate(request)
+        }
         guard let parent = await waitForCard(request.parentCardId) else {
             throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
         }
@@ -105,6 +108,8 @@ extension MasterEngine {
             return try await relinkCardSession(request)
         case .roleHandoff:
             return try await roleHandoff(request)
+        case .roleGate:
+            return try checkRoleGate(request)
         case .setContextThreshold:
             let child = try ownedSubagent(from: parent.id, targetId: request.cardId)
             // The child's own assistant decides this, not whatever the parent runs.

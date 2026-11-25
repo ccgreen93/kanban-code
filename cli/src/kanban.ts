@@ -36,6 +36,7 @@ import {
 } from "./format.js";
 import { agentIdentity } from "./agents/identity.js";
 import { runVaultAlias } from "./vault-alias.js";
+import { roleGate } from "./role-gate.js";
 import { ensureAgentSession } from "./agents/launch.js";
 import { loadAgentsConfig, isAgentHost } from "./agents/config.js";
 import { reconcileAll } from "./agents/reconcile.js";
@@ -1942,6 +1943,15 @@ roleCmd
       console.error(String(error instanceof Error ? error.message : error));
       process.exitCode = 1;
     }
+  });
+
+roleCmd
+  .command("gate", { hidden: true })
+  .description("PreToolUse hook: ask Kanban Code whether this role card may run a Bash command")
+  .option("--codex", "Answer as a Codex hook")
+  .action(async () => {
+    const answer = await roleGate(readFileSync(0, "utf-8"));
+    if (answer !== undefined) console.log(JSON.stringify(answer));
   });
 
 const channelCmd = program.command("channel").description(

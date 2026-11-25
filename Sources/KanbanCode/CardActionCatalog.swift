@@ -58,6 +58,8 @@ struct CardActionEnvironment {
     var setRole: (_ cardId: String, _ role: String?) -> Void = { _, _ in }
     /// End the card's session and start a fresh one in another role.
     var handOff: (_ cardId: String, _ role: String) -> Void = { _, _ in }
+    /// Approve or reject the command the role gate holds on a card.
+    var resolveGate: (_ cardId: String, _ approved: Bool) -> Void = { _, _ in }
 
     @MainActor
     static func live(for card: KanbanCodeCard) -> CardActionEnvironment {
@@ -100,6 +102,9 @@ struct CardActionEnvironment {
                         alert.runModal()
                     }
                 }
+            },
+            resolveGate: { cardId, approved in
+                AppComposition.shared.engine.resolveRoleGate(cardId: cardId, approved: approved)
             }
         )
     }
@@ -299,6 +304,18 @@ struct CardActionCatalog {
                     kind: .perform { onSetAgent(!isAgent) }
                 ))
             }
+        }
+        if let gate = card.link.pendingGate {
+            let cardId = card.id
+            items.append(CardActionItem(
+                id: "gate.approve", title: "Approve: \(gate.action.label.capitalizedFirst)",
+                icon: "checkmark.shield", paletteTitle: "Approve Held Command",
+                kind: .perform { environment.resolveGate(cardId, true) }
+            ))
+            items.append(CardActionItem(
+                id: "gate.reject", title: "Reject Held Command", icon: "xmark.shield",
+                kind: .perform { environment.resolveGate(cardId, false) }
+            ))
         }
         items.append(priorityItem)
         if !environment.roles.isEmpty {
@@ -594,4 +611,8 @@ struct CardActionCatalog {
         }
         return [delete]
     }
+}
+
+private extension String {
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }

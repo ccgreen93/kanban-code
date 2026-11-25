@@ -37,7 +37,8 @@ export type SubagentOperation =
   | "relinkSession"
   | "setModel"
   | "setContextThreshold"
-  | "roleHandoff";
+  | "roleHandoff"
+  | "roleGate";
 
 export interface SubagentCommandRequest {
   id: string;
@@ -64,6 +65,8 @@ export interface SubagentCommandRequest {
   worktreeName?: string;
   /** Role a spawned child starts in, or the role a hand-off moves to. */
   role?: string;
+  /** Current branch of the checkout a gated command runs in. */
+  branch?: string;
 }
 
 export interface SubagentCommandResponse {

@@ -1,0 +1,15 @@
+{
+  "defaults": {
+    "push": "allow",
+    "pr": "allow",
+    "push-protected": "deny",
+    "force-push": "deny",
+    "approve": "deny",
+    "merge": "deny",
+    "deploy": "deny"
+  },
+  "protectedBranches": ["main", "master", "trunk", "production", "prod", "release/*", "release-*"],
+  "deployPatterns": [],
+  "roles": {},
+  "projects": {}
+}

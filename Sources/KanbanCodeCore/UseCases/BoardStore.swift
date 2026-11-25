@@ -809,6 +809,12 @@ public enum Action: Sendable {
     /// Record a finished role stage and switch the card to the next role,
     /// ready for the fresh session `MasterEngine.handOffRole` starts.
     case applyRoleHandoff(cardId: String, next: Role, summary: String?)
+    /// Hold a command for the human's approval (nil clears the hold).
+    case setPendingGate(cardId: String, gate: PendingGate?)
+    /// The human's answer to the held command: approved, it may run once.
+    case resolvePendingGate(cardId: String, approved: Bool)
+    /// An approved command ran: its one allowance is used up.
+    case consumeGateAllowance(cardId: String, command: String)
     case archiveCard(cardId: String)
     /// Brings an archived card back to the board.
     case unarchiveCard(cardId: String)
@@ -1547,6 +1553,30 @@ public enum Reducer {
             let updated = RoleHandoff.apply(to: link, next: next, summary: summary)
             state.links[cardId] = updated
             return [.upsertLink(updated)]
+
+        case .setPendingGate(let cardId, let gate):
+            guard var link = state.links[cardId], link.pendingGate != gate else { return [] }
+            link.pendingGate = gate
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
+
+        case .resolvePendingGate(let cardId, let approved):
+            guard var link = state.links[cardId], let gate = link.pendingGate else { return [] }
+            link.pendingGate = nil
+            if approved { link.gateAllowances = (link.gateAllowances ?? []) + [gate.command] }
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
+
+        case .consumeGateAllowance(let cardId, let command):
+            guard var link = state.links[cardId],
+                  let index = link.gateAllowances?.firstIndex(of: command) else { return [] }
+            link.gateAllowances?.remove(at: index)
+            if link.gateAllowances?.isEmpty == true { link.gateAllowances = nil }
+            link.updatedAt = .now
+            state.links[cardId] = link
+            return [.upsertLink(link)]
 
         case .setCardModel(let cardId, let model):
             guard var link = state.links[cardId] else { return [] }
@@ -2840,6 +2870,8 @@ public enum Reducer {
                     link.effortOverride = existing.effortOverride
                     link.role = existing.role
                     link.roleHistory = existing.roleHistory
+                    link.pendingGate = existing.pendingGate
+                    link.gateAllowances = existing.gateAllowances
                     link.selfCompactContextThresholdTokens = existing.selfCompactContextThresholdTokens
                     // The machine record is written by the supervisor, never
                     // by the reconciler. A snapshot taken before the machine

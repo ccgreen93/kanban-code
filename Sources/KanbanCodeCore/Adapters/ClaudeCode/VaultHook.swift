@@ -53,6 +53,20 @@ public enum VaultHook {
       has "/proc/[^[:space:]]*/environ" && refuse "reading a process environment"
     fi
 
+    # The role gate: in a card's session, a command that may push, merge,
+    # deploy or publish goes to Kanban Code first (`kanban role gate`), which
+    # lets it run, holds it for the human, or refuses it. Cards without a
+    # role, and every other command, skip it.
+    if [ -n "$cmd" ] && { [ -n "$TMUX" ] || [ -n "$KANBAN_CARD_ID" ]; } &&
+      printf '%s\n' "$cmd" | grep -Eq '(push|merge|gh[[:space:]]|api\.github|graphql|deploy|publish|release|ship|pulumi|terraform|tofu|terragrunt|kubectl|helm|ansible|kamal|dokku|ssh|scp|rsync|upload|fly|vercel|netlify|firebase|wrangler|serverless|sls|cdk|sam[[:space:]]|eb[[:space:]]|railway|gcloud|aws[[:space:]]|az[[:space:]]|eval|-c[[:space:]])'; then
+      kanban="$HOME/.local/bin/kanban"
+      [ -x "$kanban" ] || kanban="$(command -v kanban)"
+      if [ -n "$kanban" ]; then
+        gate=$(printf '%s\n' "$input" | "$kanban" role gate "$@" 2>/dev/null)
+        if [ -n "$gate" ]; then printf '%s\n' "$gate"; exit 0; fi
+      fi
+    fi
+
     hook() {
       kv="$HOME/.local/bin/kv"
       [ -x "$kv" ] || kv="$(command -v kv)" || exit 0

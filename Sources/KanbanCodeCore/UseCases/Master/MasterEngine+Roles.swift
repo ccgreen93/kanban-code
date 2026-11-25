@@ -77,3 +77,44 @@ extension MasterEngine {
         store.dispatch(.setCardRole(cardId: cardId, role: role))
     }
 }
+
+// MARK: - Role gate
+
+extension MasterEngine {
+    /// `kanban role gate`: whether a role card's agent may run a command.
+    /// Returns to allow it; throws `RoleGate.Blocked` to refuse or hold it.
+    /// A held command shows on the card until the human answers.
+    func checkRoleGate(_ request: SubagentCommandRequest) throws -> String? {
+        guard let command = request.prompt, !command.isEmpty,
+              let card = store.state.links[request.parentCardId] else { return nil }
+        switch RoleGate.decide(card: card, command: command, branch: request.branch, policy: .load()) {
+        case .allow:
+            return card.id
+        case .approved:
+            store.dispatch(.consumeGateAllowance(cardId: card.id, command: command))
+            return card.id
+        case .ask(let pending, let reason):
+            store.dispatch(.setPendingGate(cardId: card.id, gate: pending))
+            KanbanCodeLog.info("roles", "Gate holds \(pending.action.rawValue) on \(card.id) for approval")
+            throw RoleGate.Blocked(reason: reason)
+        case .deny(let reason):
+            KanbanCodeLog.info("roles", "Gate refused a command on \(card.id): \(reason)")
+            throw RoleGate.Blocked(reason: reason)
+        }
+    }
+
+    /// The human's answer to a held command, sent to the card's agent as a
+    /// queued prompt. Approved, the exact command may run once.
+    public func resolveRoleGate(cardId: String, approved: Bool) {
+        guard let gate = store.state.links[cardId]?.pendingGate else { return }
+        store.dispatch(.resolvePendingGate(cardId: cardId, approved: approved))
+        let body = approved
+            ? "The human approved \(gate.action.label). Run the same command again now, unchanged:\n\n```\n\(gate.command)\n```"
+            : "The human rejected \(gate.action.label):\n\n```\n\(gate.command)\n```\n\nDo not run it, or anything else that does the same. Report where things stand and stop."
+        store.dispatch(.addQueuedPrompt(
+            cardId: cardId,
+            prompt: QueuedPrompt(body: body, sendAutomatically: true),
+            placement: .front
+        ))
+    }
+}

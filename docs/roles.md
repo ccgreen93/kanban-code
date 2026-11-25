@@ -11,8 +11,9 @@ and adding one line to the map.
 
 > Status: roles can be picked, set the card's model and effort, prefix its
 > first prompt and show as a badge. Workers hand off to the next role in a
-> fresh session; a control role can run the board. Approval in the Triage
-> view, gates and PR rules come next (see "Roadmap").
+> fresh session; a control role can run the board. Gates refuse merges and
+> deploys, or hold them for the human. Approval of `ask` hand-offs and PR
+> rules come next (see "Roadmap").
 
 ## Where roles live
 
@@ -182,6 +183,53 @@ never forced.
 The picker lists roles in pipeline order: walks from the Backlog roles
 first, then from roles nothing leads to (side roles), then the rest by name.
 
+## Gates
+
+On a card with a role, a command that might push, merge, deploy or
+publish is checked before it runs. `~/.kanban-code/roles/gates.json` (see
+[the example](roles/examples/gates.json)) gives each action `allow`, `ask`
+or `deny`:
+
+| Action | Catches | Default |
+|---|---|---|
+| `push` | `git push` of the card's own branch | allow |
+| `pr` | `gh pr create`, `comment`, `edit`, `review` without approving | allow |
+| `push-protected` | a push to `protectedBranches` (main, master, release/*…) or `--all` | deny |
+| `force-push` | `--force`, `--force-with-lease`, `+ref`, deleting a branch | deny |
+| `approve` | `gh pr review --approve`, an `APPROVE` review through the API | deny |
+| `merge` | `gh pr merge` (also `--auto`), the merge API, auto-merge and the merge queue | deny |
+| `deploy` | `pulumi up`, `terraform apply`, `kubectl apply`, `helm upgrade`, `docker push`, `npm`/`cargo`/`uv publish`, `gh release create`, `gh workflow run`, tag pushes, `fly`/`vercel --prod`/`firebase`/`wrangler` deploys, `make deploy`, `deploy.sh`, and over `ssh`: `docker compose up`, `systemctl restart`, `scp`/`rsync` onto a server | deny |
+
+`deployPatterns` adds regular expressions for a project's own deploys.
+Settings in `roles` apply to a role, and settings in `projects` (keyed by
+path, `~` allowed) to the cards of a project and its worktrees; a project
+beats a role, which beats `defaults`:
+
+```json
+{
+  "roles": { "review": { "merge": "ask" } },
+  "projects": {
+    "~/dev/homelab": { "deploy": "ask", "deployPatterns": ["^ssh pi .*compose up"] },
+    "~/dev/scratch": { "merge": "allow" }
+  }
+}
+```
+
+- **deny**: the command does not run, and the agent is told why and to
+  report and stop.
+- **ask**: the command does not run either; the card shows **Needs
+  approval** with the exact command. **Approve** (from the badge or the
+  card menu) lets that exact command run once and tells the agent to run
+  it again; **Reject** tells it not to. A hand-off clears both.
+
+The check is a stage of Kanban Code's Bash `PreToolUse` hook (the vault
+hook, for Claude Code and Codex): a quick text match skips every other
+command, then `kanban role gate` asks the app. If the app does not answer,
+the command is refused. It reads the command as a shell would, skipping
+heredoc bodies and quoted text and looking inside `bash -c`, `eval` and
+`ssh`, but it is a guardrail, not a security boundary: a command inside a
+script the agent wrote is not seen.
+
 ## Design choices
 
 - **The role is a card field, not a column.** In strict placement columns
@@ -194,8 +242,8 @@ first, then from roles nothing leads to (side roles), then the rest by name.
   shared without editing the others.
 - **A fresh session per role**, with summaries as the hand-off memory:
   a clean context and the right model for each stage.
-- **Workers push and open PRs; only the human merges.** Until gates exist
-  (below) the pushing rules rest on the instructions alone.
+- **Workers push and open PRs; only the human merges or deploys,** held
+  by the gates (above) as well as the instructions.
 - **No LLM supervisor is required.** The control role is optional, and has
   no more authority than a worker.
 
@@ -205,9 +253,7 @@ first, then from roles nothing leads to (side roles), then the rest by name.
 2. ~~`kanban role handoff`, role stages, card menu, `--role` on spawn,
    control role.~~
 3. `ask` hand-offs raise an attention request, answered in the Triage view.
-4. Gates in the `PreToolUse` hook, so the pushing rules hold even when an
-   instruction is ignored: merging or enabling auto-merge, force-pushing
-   and pushing to the main branch are denied for role cards. Per-role
-   approval for other writes stays opt-in.
+4. ~~Gates in the `PreToolUse` hook: merges, deploys, force-pushes and
+   pushes to main refused or held for approval, per role and project.~~
 5. Rules on PR data the board already tracks: unresolved review threads,
    failing CI and conflicts queue a prompt to the card's worker.

@@ -96,6 +96,8 @@ public enum RoleHandoff {
             endedAt: now
         )
         link.roleHistory = (link.roleHistory ?? []) + [stage]
+        link.pendingGate = nil
+        link.gateAllowances = nil
         link.role = next.name
         if let assistant = next.assistant, assistant != link.effectiveAssistant {
             link.assistant = assistant

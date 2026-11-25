@@ -66,8 +66,11 @@ issues from Linear.
    `subagent spawn`, `controls: true` and the example `control` role,
    all-auto example map.
 3. `ask` edges as `AttentionRequest`s answered in the Triage view.
-4. Gates in the `PreToolUse` Bash hook (`VaultHook` is the precedent):
-   deny with "report your draft and stop", released once from Triage.
+4. **Done (2026-11-25):** gates as a stage of the vault `PreToolUse` hook
+   calling `kanban role gate` (`RoleGateClassifier`, `RoleGatePolicy`,
+   `gates.json`). Merge, approve, deploy, force-push and protected pushes
+   default to deny; `ask` holds the command on the card (`Link.pendingGate`)
+   until the human approves it once or rejects it, from the badge or menu.
 5. Rules for unresolved review threads, failing CI and conflicts, as
    queued prompts from the daemon, each firing once per condition.
 6. Linear as `LinkSource.linearIssue` (separate track), key in `kv`.

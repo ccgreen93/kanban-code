@@ -175,6 +175,35 @@ struct RoleBadge: View {
     }
 }
 
+/// A command the role gate holds for the human: click to approve or reject.
+struct GateApprovalBadge: View {
+    let cardId: String
+    let gate: PendingGate
+
+    var body: some View {
+        Menu {
+            Text(gate.command)
+            Divider()
+            Button("Approve: run it once") {
+                AppComposition.shared.engine.resolveRoleGate(cardId: cardId, approved: true)
+            }
+            Button("Reject") {
+                AppComposition.shared.engine.resolveRoleGate(cardId: cardId, approved: false)
+            }
+        } label: {
+            Label("Needs approval", systemImage: "exclamationmark.shield.fill")
+                .font(.app(size: 9, weight: .semibold))
+                .foregroundStyle(.orange)
+                .lineLimit(1)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("The role gate holds \(gate.action.label):\n\(gate.command)")
+        .accessibilityLabel("Needs approval: \(gate.action.label)")
+    }
+}
+
 // MARK: - Priority + Status
 
 extension CardPriority {
@@ -495,6 +524,9 @@ struct CardBadgesRow: View {
     var body: some View {
         if let role = card.link.role {
             RoleBadge(role: role)
+        }
+        if let gate = card.link.pendingGate {
+            GateApprovalBadge(cardId: card.id, gate: gate)
         }
 
         // Session indicator. A lone assistant session is the normal case, so it
