@@ -1909,6 +1909,12 @@ cards with --card, under the same rules, and may give a first role to a
 started card that has none:
 
   kanban role handoff review --card card_abc123 "Build finished but did not hand off."
+
+Gates: on a role card, pushing your branch and writing to your PR are
+allowed; merging, approving, deploying, force-pushing and pushing to main are
+refused or held for the human (~/.kanban-code/roles/gates.json). A refused
+command says why: report and stop. A held one waits for the human's answer on
+the card; on approval, run the same command again, unchanged.
 `
   );
 

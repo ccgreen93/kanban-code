@@ -373,6 +373,8 @@ eval "$__kv_env"; unset __kv_env
 
 so the shell loads the secrets first and `cd` and shell syntax behave as written. In this mode secrets that need a human are skipped (the command runs without them and kv says how to ask), Jev's allow is reused for 10 minutes per card and secret, and these releases do not count toward the rate limit. If the master cannot be reached, the command runs without the vault env.
 
+The same script runs two other stages first, in this order: the secret guard (it refuses commands that would print a `.env` under `/etc` or a whole environment), then the role gate. The role gate only acts in a card's session, on a command that mentions pushing, merging, deploying or publishing: it asks `kanban role gate`, which refuses the command, holds it for the human, or lets it go on to the vault stage. See [card roles](roles.md#gates).
+
 ## Where secrets live
 
 Every `.env`, `.env.local` and `.env.*` under `~/Projects` on the Mac and the box holds plain config only. Its secrets are references in a gitignored file next to it:

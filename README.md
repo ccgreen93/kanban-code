@@ -49,6 +49,13 @@ This is Chris's fork of [langwatch/kanban-code](https://github.com/langwatch/kan
 - **Model and effort picker** in the new task dialog.
 - **Claude accounts**: list several `CLAUDE_CONFIG_DIR` folders in Settings. See [`docs/claude-accounts.md`](docs/claude-accounts.md).
 
+**Roles**
+- **Card roles**: a role is preset instructions plus a model and effort, picked in the New Task dialog. Roles live in `~/.kanban-code/roles/` as markdown files, and `transitions.json` sets which role follows which.
+- **Hand-off**: a worker runs `kanban role handoff <next> "summary"` and the card continues in a fresh session in the next role, keeping its worktree and PR. The example roles route by size: triage → build-lite → review → merge for small to medium work, triage → spec → build → review → merge for bigger work.
+- **Control agent**: a role with `controls: true` keeps the other role cards moving.
+- **Gates**: role cards may push their branch and open PRs, but merges, deploys, force-pushes and pushes to main are refused or held for your approval on the card, per project and role in `gates.json`.
+- See [`docs/roles.md`](docs/roles.md).
+
 **Terminal**
 - Terminal font and cursor settings, and a line cursor in card terminals.
 - Cmd+Backspace deletes the whole line.

@@ -23,13 +23,31 @@ To start from them:
 
 ```bash
 mkdir -p ~/.kanban-code/roles
-cp docs/roles/examples/*.md docs/roles/examples/transitions.json ~/.kanban-code/roles/
+cp docs/roles/examples/*.md docs/roles/examples/*.json ~/.kanban-code/roles/
 ```
 
-The folder is read each time the New Task dialog opens and at each
-launch, so edits apply without restarting the app. Markdown files with no
-frontmatter, or no `name`, are ignored, so notes can sit in the same
-folder.
+| File | What it holds |
+|---|---|
+| `<role>.md` | One role: frontmatter and instructions (see "Role files"). |
+| `transitions.json` | Which role may follow which (see "Transitions"). |
+| `gates.json` | What role cards may push, merge or deploy on their own (see "Gates"). Optional: without it the built-in defaults apply. |
+
+The folder is read each time the New Task dialog opens, at each launch and
+at each gated command, so edits apply without restarting the app. Markdown
+files with no frontmatter, or no `name`, are ignored, so notes can sit in
+the same folder.
+
+## In the app
+
+| Where | What |
+|---|---|
+| New Task dialog | **Role** picker; it fills in the assistant, model and effort. |
+| Card | A role badge, and an orange **Needs approval** badge while a gate holds a command (click it to approve or reject). |
+| Card menu | **Role** (set or clear, no restart), **Hand Off To** (any role, next roles first), **Approve** / **Reject Held Command**. |
+| Card detail, Prompt tab | **Role Stages**: each finished stage with its summary and a button that copies the command to resume its session. |
+| `kanban list`, `kanban show` | `role:` and `effort:` lines. |
+| `kanban role handoff` | The worker's hand-off (see "Hand-off"). |
+| `kanban subagent spawn --role` | A child card in a role. |
 
 ## Role files
 
@@ -222,13 +240,60 @@ beats a role, which beats `defaults`:
   card menu) lets that exact command run once and tells the agent to run
   it again; **Reject** tells it not to. A hand-off clears both.
 
-The check is a stage of Kanban Code's Bash `PreToolUse` hook (the vault
-hook, for Claude Code and Codex): a quick text match skips every other
-command, then `kanban role gate` asks the app. If the app does not answer,
-the command is refused. It reads the command as a shell would, skipping
-heredoc bodies and quoted text and looking inside `bash -c`, `eval` and
-`ssh`, but it is a guardrail, not a security boundary: a command inside a
-script the agent wrote is not seen.
+A held command stays on the card until it is answered; the agent stops
+and waits for the message. An approval is for that exact text: if the
+agent changes the command, it is held again.
+
+### How it works
+
+1. Kanban Code's Bash `PreToolUse` hook (`~/.kanban-code/vault-hook.sh`,
+   for Claude Code and Codex; see [the vault](vault.md#bash-hook)) runs a
+   quick text match first. A command in a card's session that mentions
+   none of `push`, `merge`, `gh `, `deploy`, `publish`, `release`, `ship`,
+   `ssh`, `scp`, `rsync`, `pulumi`, `terraform`, `kubectl`, `helm`, the
+   other deploy tools in the table, `eval` or `-c ` goes straight on.
+2. Otherwise it runs `kanban role gate`, which finds the card from the
+   tmux session. A card without a role goes straight on.
+3. The CLI sends the command and the checkout's branch to the app, which
+   classifies it (`RoleGateClassifier`), looks up the modes
+   (`RoleGatePolicy`, from `gates.json`) and answers. The strictest match
+   wins: a command with a push and a merge is refused for the merge.
+4. A refusal or hold reaches the agent as the hook's `deny` reason. If the
+   app does not answer within 15 seconds, the command is refused.
+
+The classifier reads the command as a shell would: it splits at `;`,
+`&&`, `||`, `|` and newlines, skips heredoc bodies and quoted text (a
+commit message that says "gh pr merge" is fine), drops redirections,
+peels off `sudo`, `env`, `VAR=value`, `kv env <file> --`, `npx` and the
+like, and looks inside `bash -c`, `eval` and the remote command of `ssh`.
+A push with no refspec counts as a push of the current branch, so
+`git push` from main is a protected push.
+
+A custom `deployPatterns` entry is only tried on commands that pass the
+quick text match in step 1, so give it one of those words (`^ssh box`,
+`^./bin/ship`), or it never fires.
+
+### Limits
+
+- Only Bash commands are checked. A merge through an MCP tool (a GitHub
+  MCP server's merge tool) is not.
+- It is a guardrail against an agent bending its instructions, not a
+  security boundary: a command inside a script the agent wrote, or built
+  from variables, is not seen.
+- Cards on remote machines (boxd, ssh) have not been tried with the gate yet.
+
+### Troubleshooting
+
+Every hold and refusal is logged in `~/.kanban-code/logs/kanban-code.log`
+under `[roles]`, with the card and the reason. A `gates.json` that does not
+parse is logged there too, and the built-in defaults apply until it is
+fixed (they only refuse more).
+
+The code: `Sources/KanbanCodeCore/UseCases/RoleGateClassifier.swift`,
+`RoleGatePolicy.swift`, the gate stage in
+`Adapters/ClaudeCode/VaultHook.swift`, and `cli/src/role-gate.ts`. The
+tests in `RoleGateTests.swift` list what each action catches and what
+passes.
 
 ## Design choices
 
