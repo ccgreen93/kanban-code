@@ -225,6 +225,10 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
     /// Earlier role stages, oldest first. Each keeps the session it ran in.
     public var roleHistory: [RoleStage]?
 
+    /// The card whose `kanban new` started this one. Unlike `parentCardId` it
+    /// confers no ownership; it only bounds how far cards can start cards.
+    public var startedByCardId: String?
+
     /// A command the role gate holds for the human's approval.
     public var pendingGate: PendingGate?
 
@@ -578,7 +582,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         // Card-level
         case id, name, projectPath, column, createdAt, updatedAt, lastActivity, lastOpenedAt
-        case manualOverrides, manuallyArchived, source, promptBody, promptImagePaths, parentCardId, modelOverride, effortOverride, role, roleHistory, pendingGate, gateAllowances
+        case manualOverrides, manuallyArchived, source, promptBody, promptImagePaths, parentCardId, modelOverride, effortOverride, role, roleHistory, startedByCardId, pendingGate, gateAllowances
         case selfCompactContextThresholdTokens
         case isRemote, remote, isLaunching, launchedAt, sortOrder, pinnedAt, pinnedSortOrder, priority, agentAt
         case discoveredBranches, discoveredRepos, assistant, apiServiceId, headless
@@ -612,6 +616,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         effortOverride = try c.decodeIfPresent(String.self, forKey: .effortOverride)
         role = try c.decodeIfPresent(String.self, forKey: .role)
         roleHistory = try c.decodeIfPresent([RoleStage].self, forKey: .roleHistory)
+        startedByCardId = try c.decodeIfPresent(String.self, forKey: .startedByCardId)
         pendingGate = try? c.decodeIfPresent(PendingGate.self, forKey: .pendingGate)
         gateAllowances = try c.decodeIfPresent([String].self, forKey: .gateAllowances)
         selfCompactContextThresholdTokens = try c.decodeIfPresent(Int.self, forKey: .selfCompactContextThresholdTokens)
@@ -728,6 +733,7 @@ public struct Link: Identifiable, Codable, Sendable, Equatable {
         try c.encodeIfPresent(effortOverride, forKey: .effortOverride)
         try c.encodeIfPresent(role, forKey: .role)
         try c.encodeIfPresent(roleHistory, forKey: .roleHistory)
+        try c.encodeIfPresent(startedByCardId, forKey: .startedByCardId)
         try c.encodeIfPresent(pendingGate, forKey: .pendingGate)
         try c.encodeIfPresent(gateAllowances, forKey: .gateAllowances)
         try c.encodeIfPresent(selfCompactContextThresholdTokens, forKey: .selfCompactContextThresholdTokens)

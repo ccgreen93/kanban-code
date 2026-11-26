@@ -162,6 +162,12 @@ cards that finished without handing off, nudges idle or stuck workers with
 queued prompts, and ends with the open decisions for the human. It never
 edits code, pushes or merges.
 
+It can also start a new, independent card for separate work, in any role:
+`kanban new --role spec --name x "..."`, or with `--backlog` to park it. A
+card that was itself started by another card may not start more unless its
+role controls the board, and no card may have more than 8 active cards it
+started.
+
 ## Transitions
 
 `transitions.json` maps a role to the roles that may follow it. An object

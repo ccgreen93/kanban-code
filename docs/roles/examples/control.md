@@ -29,7 +29,10 @@ yourself.
 3. A started card with no role: give it `triage` with
    `kanban role handoff triage --card <id> "summary"`, unless it is plainly
    not role work.
-4. End the pass with a short report: what you did, card by card, then every
+4. Separate work the human asked for, or that a card reported as out of
+   scope, gets its own card: `kanban new --role <role> --name <name>
+   "task"`. Use `--backlog` when it should wait for the human.
+5. End the pass with a short report: what you did, card by card, then every
    open decision as a numbered list, recommended option first, with the full
    text of anything that would leave the machine.
 
