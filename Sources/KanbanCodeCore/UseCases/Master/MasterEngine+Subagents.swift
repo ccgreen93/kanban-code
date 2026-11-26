@@ -77,6 +77,9 @@ extension MasterEngine {
         if request.operation == .roleGate {
             return try checkRoleGate(request)
         }
+        if request.operation == .createCard {
+            return try await createCard(request)
+        }
         guard let parent = await waitForCard(request.parentCardId) else {
             throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
         }
@@ -110,6 +113,8 @@ extension MasterEngine {
             return try await roleHandoff(request)
         case .roleGate:
             return try checkRoleGate(request)
+        case .createCard:
+            return try await createCard(request)
         case .setContextThreshold:
             let child = try ownedSubagent(from: parent.id, targetId: request.cardId)
             // The child's own assistant decides this, not whatever the parent runs.
@@ -257,6 +262,108 @@ extension MasterEngine {
             requester: ownCard ? .worker : .controller,
             delay: ownCard ? .seconds(2) : .zero
         )
+    }
+
+    /// `kanban new`: a card (usually a control agent) starts an independent
+    /// card for a separate piece of work. It has no owner, so none of the
+    /// subagent rules apply: it works in its own project folder (the caller's
+    /// by default), may take a role and its own worktree, and starts at once
+    /// unless asked to wait in the backlog.
+    private func createCard(_ request: SubagentCommandRequest) async throws -> String {
+        guard let prompt = request.prompt?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !prompt.isEmpty else {
+            throw SubagentCommandExecutionError.missingPrompt
+        }
+        guard let requester = await waitForCard(request.parentCardId) else {
+            throw SubagentCommandExecutionError.cardNotFound(request.parentCardId)
+        }
+        let library = RoleLibrary.load()
+        if let refusal = NewCardPolicy.refusal(
+            requester: requester,
+            requesterControls: library.role(named: requester.role)?.controls == true,
+            links: Array(store.state.links.values)
+        ) {
+            throw SubagentCommandExecutionError.refused(refusal)
+        }
+        let role: Role?
+        if let name = request.role?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            guard let found = library.role(named: name) else { throw RoleHandoff.Failure.unknownRole(name) }
+            role = found
+        } else {
+            role = nil
+        }
+        let backlog = request.backlog == true
+        if backlog, request.worktreeName != nil {
+            // A parked card has nowhere to keep the request, so it would
+            // silently start in the shared checkout later.
+            throw SubagentCommandExecutionError.refused(
+                "A backlog card cannot ask for its own worktree. Start it, or drop --worktree.")
+        }
+        let explicitProject = request.projectPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let projectPath: String
+        if let explicitProject, !explicitProject.isEmpty {
+            // A remote card's folders live on its machine, not this one.
+            var isDirectory: ObjCBool = false
+            guard requester.isRemote
+                    || (FileManager.default.fileExists(atPath: explicitProject, isDirectory: &isDirectory)
+                        && isDirectory.boolValue) else {
+                throw SubagentCommandExecutionError.projectNotFound(explicitProject)
+            }
+            projectPath = explicitProject
+        } else {
+            // The project root, not the requester's worktree: separate work
+            // starts from the repository, as the New Task dialog does.
+            projectPath = requester.projectPath ?? effectiveProjectPath(for: requester)
+        }
+        let assistant = request.assistant ?? role?.assistant ?? .claude
+        let worktreeName = SubagentWorktree.name(requested: request.worktreeName, handle: request.name)
+        if worktreeName != nil, !assistant.supportsWorktree {
+            throw SubagentCommandExecutionError.worktreeUnsupported(assistant)
+        }
+        var card = Link(
+            name: Self.requestedName(request.name) ?? subagentTitle(from: prompt),
+            projectPath: projectPath,
+            column: backlog ? .backlog : .inProgress,
+            source: .manual,
+            promptBody: prompt,
+            modelOverride: request.model ?? role?.model,
+            assistant: assistant,
+            isRemote: requester.isRemote
+        )
+        card.startedByCardId = requester.id
+        if let role {
+            card.role = role.name
+            if assistant.supportsEffort { card.effortOverride = role.effort }
+        }
+        store.dispatch(.createManualTask(card))
+        KanbanCodeLog.info("new-card", "Card \(request.parentCardId.prefix(12)) created card=\(card.id.prefix(12)) backlog=\(backlog) role=\(role?.name ?? "none")")
+        if backlog { return card.id }
+
+        var deliveryPrompt = "You are running as card \(card.id), started by card \(requester.id) "
+            + "(\(requester.name ?? "untitled")).\n\(prompt)"
+        if let role {
+            deliveryPrompt = PromptBuilder.wrap(
+                deliveryPrompt, in: role, next: library.transitions.next(after: role.name))
+        }
+        let deliveryError = await withCheckedContinuation { continuation in
+            launch(
+                cardId: card.id,
+                prompt: deliveryPrompt,
+                projectPath: projectPath,
+                worktreeName: worktreeName,
+                runRemotely: requester.isRemote,
+                assistant: assistant,
+                modelOverride: card.modelOverride,
+                machineChoice: requester.remote.map { .existing($0.machineName) },
+                keepSelection: true,
+                completion: { continuation.resume(returning: $0) }
+            )
+        }
+        if let deliveryError {
+            queueUndeliveredSubagentPrompt(cardId: card.id, prompt: deliveryPrompt)
+            throw SubagentCommandExecutionError.promptDelivery(cardId: card.id, reason: deliveryError)
+        }
+        return card.id
     }
 
     /// Reconciliation never moves a card off a session it already has, so a card
@@ -653,6 +760,9 @@ private enum SubagentCommandExecutionError: LocalizedError {
     case invalidContextThreshold(Int)
     case unsupportedContextThresholdAssistant(CodingAssistant)
     case expiredRequest
+    case projectNotFound(String)
+    case refused(String)
+    case worktreeUnsupported(CodingAssistant)
 
     var errorDescription: String? {
         switch self {
@@ -678,6 +788,12 @@ private enum SubagentCommandExecutionError: LocalizedError {
             "Invalid context threshold \(threshold). Use a positive token count such as 250k or 250000."
         case .unsupportedContextThresholdAssistant(let assistant):
             "Per-card context thresholds are currently available for Claude subagents only, not \(assistant.displayName)."
+        case .refused(let reason):
+            reason
+        case .projectNotFound(let path):
+            "No project folder at \(path)"
+        case .worktreeUnsupported(let assistant):
+            "\(assistant.displayName) cards cannot have their own worktree"
         case .expiredRequest:
             "This subagent command expired before Kanban Code could process it. Inspect existing child cards before retrying."
         }

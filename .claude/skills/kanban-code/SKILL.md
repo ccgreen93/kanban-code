@@ -15,6 +15,7 @@ kanban show <card>                   # details for a card
 kanban sessions                      # all live tmux sessions
 kanban subagent spawn --handle x "goal"   # delegate to a fresh child session
 kanban subagent fork --handle y "goal"    # delegate with a copy of your transcript
+kanban new --name x "task"           # start a separate, independent card (not your child)
 kanban subagent list                 # your children, with context usage + pane peek
 kanban role handoff review - <<'EOF' # role cards: hand the card to the next role (see Roles)
 kanban subagent model <card> opus    # switch an owned child to another model
@@ -77,6 +78,15 @@ kanban subagent resume parser-bug          # bring an archived child back
 - **`kanban subagent send <card> "..." --mode steer|queue|interrupt`** delivers to a child
   the same three ways `kanban send` does.
 - Multi-line goals: `kanban subagent spawn --handle x - <<'EOF' … EOF`.
+
+`kanban new "task"` is different: it starts an independent card on the board with
+no owner and no depth limit, for work that is not yours to supervise. Options:
+`--name`, `--project <path>` (default: your project), `--role`, `--assistant`,
+`--model`, `--worktree` / `--worktree-name <name>`, `--backlog` (create without
+starting; not with a worktree). Multi-line tasks: `kanban new - <<'EOF' … EOF`.
+A card started by another card can't start more unless its role has
+`controls: true`; at most 8 active cards per starter. The new card is told which
+card started it.
 
 As a child, report with `kanban parent dm "<message>"`. Use
 `kanban parent dm-and-self-archive "<result>"` **only when the goal is fully reached** — it
