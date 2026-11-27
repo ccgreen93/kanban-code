@@ -109,15 +109,18 @@ struct TriageItemRow: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill((card.statusTone(at: now) ?? item.bucket.tone).color)
+                .fill(tone.color)
                 .frame(width: 8, height: 8)
+                .help(tone.label)
+                .accessibilityLabel(tone.label)
             if let priority = card.link.priority {
                 PriorityIcon(priority: priority)
             }
             Text(card.displayTitle)
                 .font(.app(.body, weight: .semibold))
                 .lineLimit(1)
-            if card.showSpinner {
+            // A usage-limited card is stuck, even while its turn is open.
+            if card.showSpinner, item.bucket != .usageLimited {
                 ProgressView()
                     .controlSize(.small)
             }
@@ -126,11 +129,17 @@ struct TriageItemRow: View {
                 .font(.app(.caption))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .fixedSize()
         }
     }
 
+    private var tone: CardStatusTone {
+        card.statusTone(at: now) ?? item.bucket.tone
+    }
+
     /// What the kanban and list cards show. Triage groups by bucket, so the
-    /// card's column is named here too.
+    /// card's column is named here too. One line: project and branch give
+    /// way first when the row is narrow.
     private var metadata: some View {
         HStack(spacing: 6) {
             if card.link.cardLabel != .session {
@@ -138,7 +147,16 @@ struct TriageItemRow: View {
             }
             badge(card.column.displayName)
                 .help("Column: \(card.column.displayName)")
+                .accessibilityLabel("Column: \(card.column.displayName)")
                 .fixedSize()
+            if item.isSnoozed {
+                badge("snoozed")
+                    .fixedSize()
+            }
+            if let queued = card.link.queuedPrompts, !queued.isEmpty {
+                badge("\(queued.count) queued")
+                    .fixedSize()
+            }
 
             CardBadgesRow(card: card)
 
@@ -148,15 +166,8 @@ struct TriageItemRow: View {
             if let branch = card.link.worktreeLink?.branch {
                 metadataLabel(branch, systemImage: "arrow.triangle.branch")
             }
-            if let queued = card.link.queuedPrompts, !queued.isEmpty {
-                badge("\(queued.count) queued")
-                    .fixedSize()
-            }
-            if item.isSnoozed {
-                badge("snoozed")
-                    .fixedSize()
-            }
         }
+        .lineLimit(1)
     }
 
     private func metadataLabel(_ text: String, systemImage: String) -> some View {
@@ -165,6 +176,7 @@ struct TriageItemRow: View {
             .foregroundStyle(.secondary)
             .lineLimit(1)
             .truncationMode(.middle)
+            .layoutPriority(-1)
             .help(text)
     }
 
@@ -192,10 +204,6 @@ struct TriageItemRow: View {
                         .textSelection(.enabled)
                 }
             }
-        } else if item.bucket == .usageLimited, let limit = card.activeUsageLimit(at: now) {
-            Text(limit.resetsAt.map { "Usage limit, resets \($0.formatted(date: .omitted, time: .shortened))" } ?? "Usage limit reached")
-                .font(.app(.callout))
-                .foregroundStyle(.secondary)
         } else if let preview, !preview.isEmpty {
             if isFocused {
                 VStack(alignment: .leading, spacing: 4) {

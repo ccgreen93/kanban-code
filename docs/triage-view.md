@@ -80,13 +80,15 @@ SwiftUI.
 │                                                                          │
 │ ▸ ASKED YOU                                                              │
 │ ┌──────────────────────────────────────────────────────────────────────┐ │
-│ │● fix-auth-flow           vx · cg/auth           waiting 12m          │ │
+│ │● fix-auth-flow                                  waiting 12m          │ │
+│ │  In Progress  build  ✓ #12  📁 vx  ⑂ cg/auth                         │ │
 │ │  "Allow Bash(rm -rf build/)?"                                        │ │
 │ │  [Approve] [Deny] [Always allow…]                  open ⏎ · snooze s │ │
 │ └──────────────────────────────────────────────────────────────────────┘ │
 │ ▸ YOUR TURN                                                              │
 │ ┌──────────────────────────────────────────────────────────────────────┐ │
-│ │● triage-view-spec        kanban-code            waiting 42m   ◀ focus│ │
+│ │● triage-view-spec                               waiting 42m   ◀ focus│ │
+│ │  Waiting  2 queued  📁 kanban-code                                   │ │
 │ │  Claude: "Spec written to docs/triage-view.md. Want me to start…"    │ │
 │ │  ▏$ swift test …  142 passed                                         │ │
 │ │  ┌ reply… ───────────────────────────────────────────── ⌘⏎ send ┐   │ │
@@ -115,14 +117,14 @@ SwiftUI.
 
 | Element | Source |
 |---|---|
-| Status dot and bucket colour | existing `CardStatusTone` mapping |
-| Priority, title | `link.priority`, `card.displayTitle`, plus a spinner while the card is busy |
-| Card details (second line) | the card label, the column name, the same `CardBadgesRow` as the kanban and list cards (role, held gate, session and model, PRs, limits, issue, images, machine), project and `link.worktreeLink?.branch` |
+| Status dot and bucket colour | existing `CardStatusTone` mapping, its label as the tooltip |
+| Priority, title | `link.priority`, `card.displayTitle`, plus a spinner while the card is busy (not in *Usage-limited*: that card is stuck) |
+| Card details (second line) | one line: the card label (non-session cards), the column name, the *snoozed* and *N queued* badges, the same `CardBadgesRow` as the kanban and list cards (role, held gate, session and model, PRs, external session, usage and rate limits, issue, images, owner, machine), then project and `link.worktreeLink?.branch`, which truncate first when the row is narrow. A usage-limited card shows its limit and reset time here, in the usage-limit badge |
 | Waiting time | "waiting since" (above), refreshed by a 30 s `TimelineView` |
 | The ask (*Asked you*) | `AttentionRequest.title` / `body`, with `options` as buttons |
 | Last assistant message | `TranscriptNotificationReader.lastAssistantText(transcriptPath:assistant:)` on the session's transcript path, then `textPreview`, loaded off the main actor in `.task(id:)` keyed by `link.lastActivity` and cached per card in `TriageView` |
 | Terminal tail (focused item only) | last 3 non-empty lines of `TmuxAdapter.capturePane(sessionName:)`, run **only for the focused item**: once when focus lands on it (debounced 300 ms), then every 10 s while it stays focused. Omitted when the card has no `tmuxLink`. `TerminalCache` holds SwiftTerm views with no text-tail API, so it is not used here. Never poll every row: recent commits removed a tmux process per scroll event for performance reasons |
-| Queued prompts | count badge if `link.queuedPrompts` is not empty ("2 queued") |
+| Queued prompts | count badge on the second line if `link.queuedPrompts` is not empty ("2 queued") |
 
 ## Actions
 
@@ -235,6 +237,15 @@ Reducer tests:
 
 App tests:
 - `BoardViewMode` raw values are stable; leaving expanded mode returns to lastBoard
+
+Looking at the rows without the app:
+
+```bash
+KANBAN_TRIAGE_SNAPSHOT=<directory> swift test --filter TriageRowSnapshot
+```
+
+draws sample rows (a light card, one with every badge, a snoozed one) at 900 and 480 pt to PNG
+files in that directory. It asserts nothing and is skipped when the variable is unset.
 
 Manual check (`make app NO_REGISTER=1` in this worktree): run 3 agents, take one to a permission
 prompt and let one go idle, then clear the queue with only `j`, `1`, `r`, `⌘⏎` and `s`.
