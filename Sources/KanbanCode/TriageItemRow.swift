@@ -75,6 +75,7 @@ struct TriageItemRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
+            metadata
             context
             if isFocused {
                 if let request = item.requests.first {
@@ -108,31 +109,75 @@ struct TriageItemRow: View {
     private var header: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill((card.statusTone(at: now) ?? item.bucket.tone).color)
+                .fill(tone.color)
                 .frame(width: 8, height: 8)
+                .help(tone.label)
+                .accessibilityLabel(tone.label)
+            if let priority = card.link.priority {
+                PriorityIcon(priority: priority)
+            }
             Text(card.displayTitle)
                 .font(.app(.body, weight: .semibold))
                 .lineLimit(1)
-            Text(location)
-                .font(.app(.caption))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            if let queued = card.link.queuedPrompts, !queued.isEmpty {
-                badge("\(queued.count) queued")
-            }
-            if item.isSnoozed {
-                badge("snoozed")
+            // A usage-limited card is stuck, even while its turn is open.
+            if card.showSpinner, item.bucket != .usageLimited {
+                ProgressView()
+                    .controlSize(.small)
             }
             Spacer(minLength: 8)
             Text("waiting \(TriageFormat.wait(now.timeIntervalSince(item.waitingSince)))")
                 .font(.app(.caption))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
+                .fixedSize()
         }
     }
 
-    private var location: String {
-        [card.projectName, card.link.worktreeLink?.branch].compactMap { $0 }.joined(separator: " · ")
+    private var tone: CardStatusTone {
+        card.statusTone(at: now) ?? item.bucket.tone
+    }
+
+    /// What the kanban and list cards show. Triage groups by bucket, so the
+    /// card's column is named here too. One line: project and branch give
+    /// way first when the row is narrow.
+    private var metadata: some View {
+        HStack(spacing: 6) {
+            if card.link.cardLabel != .session {
+                CardLabelBadge(label: card.link.cardLabel)
+            }
+            badge(card.column.displayName)
+                .help("Column: \(card.column.displayName)")
+                .accessibilityLabel("Column: \(card.column.displayName)")
+                .fixedSize()
+            if item.isSnoozed {
+                badge("snoozed")
+                    .fixedSize()
+            }
+            if let queued = card.link.queuedPrompts, !queued.isEmpty {
+                badge("\(queued.count) queued")
+                    .fixedSize()
+            }
+
+            CardBadgesRow(card: card)
+
+            if let projectName = card.projectName {
+                metadataLabel(projectName, systemImage: "folder")
+            }
+            if let branch = card.link.worktreeLink?.branch {
+                metadataLabel(branch, systemImage: "arrow.triangle.branch")
+            }
+        }
+        .lineLimit(1)
+    }
+
+    private func metadataLabel(_ text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.app(.caption))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .layoutPriority(-1)
+            .help(text)
     }
 
     private func badge(_ text: String) -> some View {
@@ -159,10 +204,6 @@ struct TriageItemRow: View {
                         .textSelection(.enabled)
                 }
             }
-        } else if item.bucket == .usageLimited, let limit = card.activeUsageLimit(at: now) {
-            Text(limit.resetsAt.map { "Usage limit, resets \($0.formatted(date: .omitted, time: .shortened))" } ?? "Usage limit reached")
-                .font(.app(.callout))
-                .foregroundStyle(.secondary)
         } else if let preview, !preview.isEmpty {
             if isFocused {
                 VStack(alignment: .leading, spacing: 4) {
