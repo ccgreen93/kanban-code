@@ -75,6 +75,7 @@ struct TriageItemRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             header
+            metadata
             context
             if isFocused {
                 if let request = item.requests.first {
@@ -110,18 +111,15 @@ struct TriageItemRow: View {
             Circle()
                 .fill((card.statusTone(at: now) ?? item.bucket.tone).color)
                 .frame(width: 8, height: 8)
+            if let priority = card.link.priority {
+                PriorityIcon(priority: priority)
+            }
             Text(card.displayTitle)
                 .font(.app(.body, weight: .semibold))
                 .lineLimit(1)
-            Text(location)
-                .font(.app(.caption))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            if let queued = card.link.queuedPrompts, !queued.isEmpty {
-                badge("\(queued.count) queued")
-            }
-            if item.isSnoozed {
-                badge("snoozed")
+            if card.showSpinner {
+                ProgressView()
+                    .controlSize(.small)
             }
             Spacer(minLength: 8)
             Text("waiting \(TriageFormat.wait(now.timeIntervalSince(item.waitingSince)))")
@@ -131,8 +129,43 @@ struct TriageItemRow: View {
         }
     }
 
-    private var location: String {
-        [card.projectName, card.link.worktreeLink?.branch].compactMap { $0 }.joined(separator: " · ")
+    /// What the kanban and list cards show. Triage groups by bucket, so the
+    /// card's column is named here too.
+    private var metadata: some View {
+        HStack(spacing: 6) {
+            if card.link.cardLabel != .session {
+                CardLabelBadge(label: card.link.cardLabel)
+            }
+            badge(card.column.displayName)
+                .help("Column: \(card.column.displayName)")
+                .fixedSize()
+
+            CardBadgesRow(card: card)
+
+            if let projectName = card.projectName {
+                metadataLabel(projectName, systemImage: "folder")
+            }
+            if let branch = card.link.worktreeLink?.branch {
+                metadataLabel(branch, systemImage: "arrow.triangle.branch")
+            }
+            if let queued = card.link.queuedPrompts, !queued.isEmpty {
+                badge("\(queued.count) queued")
+                    .fixedSize()
+            }
+            if item.isSnoozed {
+                badge("snoozed")
+                    .fixedSize()
+            }
+        }
+    }
+
+    private func metadataLabel(_ text: String, systemImage: String) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.app(.caption))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .truncationMode(.middle)
+            .help(text)
     }
 
     private func badge(_ text: String) -> some View {

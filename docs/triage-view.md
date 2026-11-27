@@ -116,7 +116,8 @@ SwiftUI.
 | Element | Source |
 |---|---|
 | Status dot and bucket colour | existing `CardStatusTone` mapping |
-| Title, project, branch | `card.displayTitle`, project name, `link.worktreeLink?.branch` |
+| Priority, title | `link.priority`, `card.displayTitle`, plus a spinner while the card is busy |
+| Card details (second line) | the card label, the column name, the same `CardBadgesRow` as the kanban and list cards (role, held gate, session and model, PRs, limits, issue, images, machine), project and `link.worktreeLink?.branch` |
 | Waiting time | "waiting since" (above), refreshed by a 30 s `TimelineView` |
 | The ask (*Asked you*) | `AttentionRequest.title` / `body`, with `options` as buttons |
 | Last assistant message | `TranscriptNotificationReader.lastAssistantText(transcriptPath:assistant:)` on the session's transcript path, then `textPreview`, loaded off the main actor in `.task(id:)` keyed by `link.lastActivity` and cached per card in `TriageView` |
